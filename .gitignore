@@ -1,0 +1,54 @@
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+.next/
+out/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Local data (for development)
+books/
+data/
+postgres_data/
+uploads/
+
+# Logs
+logs/
+*.log
+
+# Claude AI context
+.claude/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Docker volumes
+volumes/

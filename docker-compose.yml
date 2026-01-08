@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: northstar-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-northstar}
+      POSTGRES_USER: ${POSTGRES_USER:-northstar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-northstar}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - northstar-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-northstar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: northstar-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-northstar}:${POSTGRES_PASSWORD:-northstar}@postgres:5432/${POSTGRES_DB:-northstar}
+      BOOKS_PATH: /books
+      COVERS_PATH: /data/covers
+      THUMBNAILS_PATH: /data/thumbnails
+    volumes:
+      - ${BOOKS_LIBRARY_PATH:-./books}:/books:ro
+      - covers_data:/data/covers
+      - thumbnails_data:/data/thumbnails
+      - config_data:/data/config
+    ports:
+      - "${API_PORT:-3000}:3000"
+    networks:
+      - northstar-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: northstar-worker
+    restart: unless-stopped
+    command: npm run worker
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-northstar}:${POSTGRES_PASSWORD:-northstar}@postgres:5432/${POSTGRES_DB:-northstar}
+      BOOKS_PATH: /books
+      COVERS_PATH: /data/covers
+      THUMBNAILS_PATH: /data/thumbnails
+      GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
+    volumes:
+      - ${BOOKS_LIBRARY_PATH:-./books}:/books:ro
+      - covers_data:/data/covers
+      - thumbnails_data:/data/thumbnails
+      - config_data:/data/config
+    networks:
+      - northstar-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: northstar-web
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    networks:
+      - northstar-network
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  covers_data:
+  thumbnails_data:
+  config_data:
+
+networks:
+  northstar-network:
+    driver: bridge
