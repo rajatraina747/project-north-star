@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../lib/auth';
+import ThemeToggle from './ThemeToggle';
 
 export default function Nav() {
   const location = useLocation();
@@ -12,16 +13,16 @@ export default function Nav() {
   ];
 
   return (
-    <nav className="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
+    <nav className="w-64 bg-parchment-100/80 backdrop-blur-sm border-r border-parchment-300 flex flex-col">
       {/* Logo */}
-      <div className="p-6 border-b border-zinc-800">
+      <div className="px-6 py-7 border-b border-parchment-300">
         <Link to="/" className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-10 h-10 bg-gradient-to-br from-ember-500 to-ember-700 rounded-xl flex items-center justify-center shadow-warm">
+            <svg className="w-6 h-6 text-cream" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
           </div>
-          <span className="text-xl font-bold text-white">North Star</span>
+          <span className="text-xl font-serif font-bold text-ink-900 tracking-tight">North Star</span>
         </Link>
       </div>
 
@@ -37,10 +38,10 @@ export default function Nav() {
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition ${
+              className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-all duration-250 ease-soft ${
                 isActive
-                  ? 'bg-blue-600 text-white'
-                  : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
+                  ? 'bg-ember-500/12 text-ember-700 font-semibold'
+                  : 'text-ink-500 hover:bg-parchment-200 hover:text-ink-800'
               }`}
             >
               <Icon className="w-5 h-5" />
@@ -50,22 +51,23 @@ export default function Nav() {
         })}
       </div>
 
-      {/* User Profile */}
-      <div className="p-4 border-t border-zinc-800">
-        <div className="flex items-center space-x-3 px-4 py-3 bg-zinc-800 rounded-lg">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
+      {/* Theme + User Profile */}
+      <div className="p-4 border-t border-parchment-300 space-y-3">
+        <ThemeToggle />
+        <div className="flex items-center space-x-3 px-3 py-2.5 bg-parchment-200/70 rounded-lg">
+          <div className="w-8 h-8 bg-gradient-to-br from-ember-500 to-ember-700 rounded-full flex items-center justify-center text-cream text-sm font-bold">
             {user?.username?.charAt(0).toUpperCase() || 'U'}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{user?.display_name || user?.username}</p>
-            <p className="text-xs text-zinc-400">
+            <p className="text-sm font-medium text-ink-900 truncate">{user?.display_name || user?.username}</p>
+            <p className="text-xs text-ink-400">
               {user?.is_admin ? 'Administrator' : 'User'}
             </p>
           </div>
         </div>
         <button
           onClick={logout}
-          className="w-full mt-2 flex items-center justify-center space-x-2 px-4 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition"
+          className="w-full mt-2 flex items-center justify-center space-x-2 px-4 py-2 text-sm text-ink-400 hover:text-ember-700 hover:bg-parchment-200 rounded-lg transition-colors duration-250 ease-soft"
         >
           <LogoutIcon className="w-4 h-4" />
           <span>Sign Out</span>

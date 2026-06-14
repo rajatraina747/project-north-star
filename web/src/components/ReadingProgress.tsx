@@ -29,14 +29,12 @@ export default function ReadingProgress({
     return `${Math.floor(diffDays / 30)} months ago`;
   };
 
-  const isActive = progress > 0 && progress < 100;
-
   return (
     <div className="space-y-1.5">
-      {/* Progress Bar with signature star-glow for active reading */}
-      <div className={`w-full bg-obsidian-800/50 rounded-full overflow-visible ${height} relative`}>
+      {/* Progress Bar */}
+      <div className={`w-full bg-parchment-300/70 rounded-full overflow-visible ${height} relative`}>
         <div
-          className={`h-full bg-gradient-to-r from-polaris-600 to-polaris-500 transition-all duration-250 ease-soft rounded-full ${isActive ? 'star-glow' : ''}`}
+          className={`h-full bg-gradient-to-r from-ember-500 to-ember-400 transition-all duration-250 ease-soft rounded-full`}
           style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
         />
       </div>
@@ -45,12 +43,12 @@ export default function ReadingProgress({
       {(showPercentage || showLastRead) && (
         <div className="flex items-center justify-between">
           {showPercentage && (
-            <span className={`${textSize} font-medium text-polaris-400`}>
+            <span className={`${textSize} font-medium text-ember-700`}>
               {Math.round(progress)}% complete
             </span>
           )}
           {showLastRead && lastRead && (
-            <span className={`${textSize} text-obsidian-500`}>
+            <span className={`${textSize} text-ink-400`}>
               {getDaysAgo(lastRead)}
             </span>
           )}

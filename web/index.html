@@ -1,13 +1,22 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>North Star - Your Personal Library</title>
     <meta name="description" content="Self-hosted book library with EPUB and PDF support" />
+    <!-- Apply the saved theme before paint to avoid a flash of the wrong mode -->
+    <script>
+      try {
+        var t = JSON.parse(localStorage.getItem('theme') || '{}');
+        var mode = (t && t.state && t.state.mode) || 'system';
+        var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('dark');
+      } catch (e) {}
+    </script>
   </head>
-  <body class="bg-obsidian-950 text-white">
+  <body class="bg-parchment-50 text-ink-900">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

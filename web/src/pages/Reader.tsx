@@ -15,10 +15,10 @@ export default function Reader() {
 
   if (isLoading) {
     return (
-      <div className="h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="h-screen bg-parchment-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4" />
-          <p className="text-zinc-400">Loading book...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-ember-500 mx-auto mb-4" />
+          <p className="text-ink-500">Loading book...</p>
         </div>
       </div>
     );
@@ -26,9 +26,9 @@ export default function Reader() {
 
   if (!book?.data || !fileId) {
     return (
-      <div className="h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="h-screen bg-parchment-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-400">Book not found</p>
+          <p className="text-red-700">Book not found</p>
         </div>
       </div>
     );
@@ -38,9 +38,9 @@ export default function Reader() {
 
   if (!bookFile) {
     return (
-      <div className="h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="h-screen bg-parchment-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-400">File not found</p>
+          <p className="text-red-700">File not found</p>
         </div>
       </div>
     );
@@ -49,7 +49,7 @@ export default function Reader() {
   const fileUrl = booksApi.getFile(bookId!, fileId);
 
   return (
-    <div className="h-screen bg-zinc-950">
+    <div className="h-screen bg-parchment-50">
       {bookFile.format === 'EPUB' ? (
         <EpubReader
           bookId={bookId!}

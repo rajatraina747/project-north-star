@@ -28,10 +28,10 @@ function App() {
 
   if (!hasHydrated) {
     return (
-      <div className="min-h-screen bg-obsidian-950 flex items-center justify-center">
+      <div className="min-h-screen bg-parchment-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-polaris-500 mx-auto mb-4" />
-          <p className="text-obsidian-400">Loading...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-ember-500 mx-auto mb-4" />
+          <p className="text-ink-500">Loading...</p>
         </div>
       </div>
     );
@@ -43,7 +43,7 @@ function App() {
 
   return (
     <BrowserRouter>
-      <div className="flex h-screen bg-obsidian-950">
+      <div className="flex h-screen bg-parchment-50">
         <Nav />
         <main className="flex-1 overflow-auto">
           <Routes>

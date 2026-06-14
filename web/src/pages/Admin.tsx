@@ -46,12 +46,12 @@ export default function Admin() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950">
+    <div className="min-h-screen">
       {/* Header */}
-      <div className="bg-zinc-900 border-b border-zinc-800">
+      <div className="bg-parchment-100/70 border-b border-parchment-300">
         <div className="max-w-7xl mx-auto px-8 py-6">
-          <h1 className="text-3xl font-bold text-white">Admin Panel</h1>
-          <p className="text-zinc-400 mt-1">Manage your North Star server</p>
+          <h1 className="text-3xl font-serif font-bold text-ink-900">Admin Panel</h1>
+          <p className="text-ink-500 mt-1">Manage your North Star server</p>
         </div>
       </div>
 
@@ -61,42 +61,38 @@ export default function Admin() {
           <StatCard
             title="Total Books"
             value={stats?.data?.books || 0}
-            icon="📚"
-            color="blue"
+            icon={<BooksIcon />}
           />
           <StatCard
             title="Authors"
             value={stats?.data?.authors || 0}
-            icon="✍️"
-            color="purple"
+            icon={<AuthorIcon />}
           />
           <StatCard
             title="EPUB Files"
             value={stats?.data?.formatCounts?.find((f: any) => f.format === 'EPUB')?.count || 0}
-            icon="📖"
-            color="green"
+            icon={<BookOpenIcon />}
           />
           <StatCard
             title="PDF Files"
             value={stats?.data?.formatCounts?.find((f: any) => f.format === 'PDF')?.count || 0}
-            icon="📄"
-            color="orange"
+            icon={<DocumentIcon />}
           />
         </div>
 
         {/* Library Scan Section */}
-        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6">
+        <div className="bg-parchment-100/70 rounded-xl border border-parchment-300 p-6">
           <div className="flex items-start justify-between mb-6">
             <div>
-              <h2 className="text-xl font-semibold text-white mb-2">Library Scan</h2>
-              <p className="text-zinc-400">
+              <h2 className="text-xl font-serif font-semibold text-ink-900 mb-2">Library Scan</h2>
+              <p className="text-ink-500">
                 Scan your books folder to import new books and update existing ones
               </p>
             </div>
             <button
               onClick={handleScan}
               disabled={scanLoading}
-              className="flex items-center space-x-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition"
+              className="flex items-center space-x-2 px-6 py-3 bg-ember-500 hover:bg-ember-600 disabled:bg-ember-300 disabled:cursor-not-allowed text-cream font-semibold rounded-lg transition shadow-warm"
             >
               {scanLoading ? (
                 <>
@@ -117,8 +113,8 @@ export default function Admin() {
           {scanMessage && (
             <div className={`p-4 rounded-lg ${
               scanMessage.includes('success')
-                ? 'bg-green-500/10 border border-green-500/50 text-green-400'
-                : 'bg-red-500/10 border border-red-500/50 text-red-400'
+                ? 'bg-green-600/10 border border-green-600/30 text-green-800'
+                : 'bg-red-600/10 border border-red-600/30 text-red-800'
             }`}>
               {scanMessage}
             </div>
@@ -126,41 +122,41 @@ export default function Admin() {
         </div>
 
         {/* Scan History */}
-        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6">
-          <h2 className="text-xl font-semibold text-white mb-4">Recent Scans</h2>
+        <div className="bg-parchment-100/70 rounded-xl border border-parchment-300 p-6">
+          <h2 className="text-xl font-serif font-semibold text-ink-900 mb-4">Recent Scans</h2>
 
           {scans && scans.length > 0 ? (
             <div className="space-y-3">
               {scans.map((scan: any) => (
                 <div
                   key={scan.id}
-                  className="flex items-center justify-between p-4 bg-zinc-800/50 rounded-lg border border-zinc-700"
+                  className="flex items-center justify-between p-4 bg-parchment-50 rounded-lg border border-parchment-300"
                 >
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
                       <StatusBadge status={scan.status} />
-                      <span className="text-sm text-zinc-400">
+                      <span className="text-sm text-ink-400">
                         {new Date(scan.started_at).toLocaleString()}
                       </span>
                     </div>
                     <div className="flex items-center space-x-6 text-sm">
-                      <Stat label="Scanned" value={scan.files_scanned} color="text-zinc-300" />
-                      <Stat label="Added" value={scan.files_added} color="text-green-400" />
-                      <Stat label="Updated" value={scan.files_updated} color="text-blue-400" />
-                      <Stat label="Removed" value={scan.files_removed} color="text-red-400" />
+                      <Stat label="Scanned" value={scan.files_scanned} color="text-ink-700" />
+                      <Stat label="Added" value={scan.files_added} color="text-green-700" />
+                      <Stat label="Updated" value={scan.files_updated} color="text-ember-700" />
+                      <Stat label="Removed" value={scan.files_removed} color="text-red-700" />
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-zinc-500 text-center py-8">No scans yet</p>
+            <p className="text-ink-400 text-center py-8">No scans yet</p>
           )}
         </div>
 
         {/* System Info */}
-        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6">
-          <h2 className="text-xl font-semibold text-white mb-4">System Information</h2>
+        <div className="bg-parchment-100/70 rounded-xl border border-parchment-300 p-6">
+          <h2 className="text-xl font-serif font-semibold text-ink-900 mb-4">System Information</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <InfoRow label="API Version" value="1.0.0" />
             <InfoRow label="Database" value="PostgreSQL" />
@@ -176,45 +172,63 @@ export default function Admin() {
   );
 }
 
-const colorClasses = {
-  blue: 'from-blue-600 to-blue-700',
-  purple: 'from-purple-600 to-purple-700',
-  green: 'from-green-600 to-green-700',
-  orange: 'from-orange-600 to-orange-700',
-  slate: 'from-slate-600 to-slate-700',
-};
-
 function StatCard({
   title,
   value,
   icon,
-  color,
 }: {
   title: string;
   value: number;
   icon: ReactNode;
-  color: keyof typeof colorClasses;
 }) {
-  const gradient = colorClasses[color] ?? colorClasses.slate;
-
   return (
-    <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6">
+    <div className="bg-parchment-100/70 rounded-xl border border-parchment-300 p-6 shadow-warm">
       <div className="flex items-center justify-between mb-4">
-        <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center text-2xl`}>
+        <div className="w-12 h-12 rounded-xl bg-ember-500/12 text-ember-600 flex items-center justify-center">
           {icon}
         </div>
       </div>
-      <div className="text-3xl font-bold text-white mb-1">{value.toLocaleString()}</div>
-      <div className="text-sm text-zinc-400">{title}</div>
+      <div className="text-3xl font-serif font-bold text-ink-900 mb-1">{value.toLocaleString()}</div>
+      <div className="text-sm text-ink-500">{title}</div>
     </div>
+  );
+}
+
+const statIconClass = 'w-6 h-6';
+function BooksIcon() {
+  return (
+    <svg className={statIconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+    </svg>
+  );
+}
+function AuthorIcon() {
+  return (
+    <svg className={statIconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  );
+}
+function BookOpenIcon() {
+  return (
+    <svg className={statIconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+    </svg>
+  );
+}
+function DocumentIcon() {
+  return (
+    <svg className={statIconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
   );
 }
 
 function StatusBadge({ status }: { status: string }) {
   const colors = {
-    COMPLETED: 'bg-green-500/20 text-green-400 border-green-500/30',
-    RUNNING: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    FAILED: 'bg-red-500/20 text-red-400 border-red-500/30',
+    COMPLETED: 'bg-green-600/12 text-green-800 border-green-600/25',
+    RUNNING: 'bg-ember-500/15 text-ember-700 border-ember-500/30',
+    FAILED: 'bg-red-600/12 text-red-800 border-red-600/25',
   };
 
   return (
@@ -227,7 +241,7 @@ function StatusBadge({ status }: { status: string }) {
 function Stat({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div>
-      <span className="text-zinc-500">{label}:</span>
+      <span className="text-ink-400">{label}:</span>
       <span className={`ml-1 font-semibold ${color}`}>{value}</span>
     </div>
   );
@@ -235,9 +249,9 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
-      <span className="text-zinc-400">{label}</span>
-      <span className="text-white font-medium">{value}</span>
+    <div className="flex items-center justify-between p-3 bg-parchment-50 rounded-lg border border-parchment-300">
+      <span className="text-ink-400">{label}</span>
+      <span className="text-ink-900 font-medium">{value}</span>
     </div>
   );
 }

@@ -399,20 +399,20 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
       onLast={goToLast}
       onProgressSeek={handleSeek}
       rightActions={(
-        <div className="flex items-center gap-2 bg-obsidian-800/60 rounded-lg p-1">
+        <div className="flex items-center gap-2 bg-parchment-200 rounded-lg p-1">
           <button
             onClick={() => changeFontSize(-10)}
-            className="p-2 text-obsidian-400 hover:text-white"
+            className="p-2 text-ink-500 hover:text-ink-900"
             title="Decrease font size"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
             </svg>
           </button>
-          <span className="text-xs text-obsidian-400 w-10 text-center">{fontSize}%</span>
+          <span className="text-xs text-ink-500 w-10 text-center">{fontSize}%</span>
           <button
             onClick={() => changeFontSize(10)}
-            className="p-2 text-obsidian-400 hover:text-white"
+            className="p-2 text-ink-500 hover:text-ink-900"
             title="Increase font size"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -424,25 +424,25 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
     >
       <div className="relative h-full">
         {isLoading && !error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-obsidian-950 z-10 rounded-2xl">
+          <div className="absolute inset-0 flex items-center justify-center bg-parchment-50 z-10 rounded-2xl">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-polaris-500 mx-auto mb-3" />
-              <p className="text-obsidian-400 text-sm">Opening EPUB...</p>
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-ember-500 mx-auto mb-3" />
+              <p className="text-ink-500 text-sm">Opening EPUB...</p>
             </div>
           </div>
         )}
 
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-obsidian-950 z-10 rounded-2xl">
+          <div className="absolute inset-0 flex items-center justify-center bg-parchment-50 z-10 rounded-2xl">
             <div className="text-center max-w-md">
               <svg className="w-16 h-16 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <h3 className="text-xl font-semibold text-white mb-2">Failed to Load Book</h3>
-              <p className="text-obsidian-400 mb-4">{error}</p>
+              <h3 className="text-xl font-semibold text-ink-900 mb-2">Failed to Load Book</h3>
+              <p className="text-ink-500 mb-4">{error}</p>
               <button
                 onClick={() => navigate(`/books/${bookId}`)}
-                className="px-6 py-2 bg-polaris-600 text-white rounded-lg hover:bg-polaris-700"
+                className="px-6 py-2 bg-ember-500 text-cream rounded-lg hover:bg-ember-600"
               >
                 Go Back
               </button>

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { books as booksApi } from '../lib/api';
@@ -45,17 +46,17 @@ export default function BookDetail() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950">
+    <div className="min-h-screen">
       {/* Hero Section with Background */}
       <div className="relative">
         {/* Blurred Background */}
         {coverUrl && (
           <div className="absolute inset-0 overflow-hidden">
             <div
-              className="absolute inset-0 bg-cover bg-center blur-3xl opacity-20"
+              className="absolute inset-0 bg-cover bg-center blur-3xl opacity-25"
               style={{ backgroundImage: `url(${coverUrl})` }}
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/50 via-zinc-950/80 to-zinc-950" />
+            <div className="absolute inset-0 bg-gradient-to-b from-parchment-50/70 via-parchment-50/90 to-parchment-50" />
           </div>
         )}
 
@@ -64,7 +65,7 @@ export default function BookDetail() {
           <button
             type="button"
             onClick={handleBack}
-            className="inline-flex items-center text-zinc-500 hover:text-zinc-300 transition-all duration-250 ease-soft group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+            className="inline-flex items-center text-ink-400 hover:text-ink-700 transition-all duration-250 ease-soft group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ember-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-parchment-50"
             aria-label="Back"
             title="Back"
           >
@@ -76,8 +77,8 @@ export default function BookDetail() {
           <div className="flex flex-col md:flex-row gap-8">
             {/* Cover */}
             <div className="flex-shrink-0">
-              <div className="relative w-64 aspect-[2/3] bg-zinc-800 rounded-xl overflow-hidden shadow-2xl">
-                <div className="absolute -inset-2 bg-blue-500/10 blur-2xl opacity-60" aria-hidden="true" />
+              <div className="relative w-64 aspect-[2/3] bg-parchment-200 rounded-xl overflow-hidden shadow-warm-lg ring-1 ring-parchment-300">
+                <div className="absolute -inset-2 bg-ember-500/10 blur-2xl opacity-60" aria-hidden="true" />
                 {coverUrl ? (
                   <img
                     src={coverUrl}
@@ -85,8 +86,8 @@ export default function BookDetail() {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-zinc-700 to-zinc-800">
-                    <svg className="w-24 h-24 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-parchment-200 to-parchment-300">
+                    <svg className="w-24 h-24 text-ink-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                     </svg>
                   </div>
@@ -96,18 +97,18 @@ export default function BookDetail() {
 
             {/* Info */}
             <div className="flex-1">
-              <h1 className="text-4xl font-bold text-white mb-2">{bookData.title}</h1>
+              <h1 className="text-4xl font-serif font-bold text-ink-900 mb-2">{bookData.title}</h1>
               {bookData.subtitle && (
-                <h2 className="text-xl text-zinc-400 mb-4">{bookData.subtitle}</h2>
+                <h2 className="text-xl text-ink-500 mb-4 font-serif">{bookData.subtitle}</h2>
               )}
 
               {/* Authors */}
               {bookData.authors && bookData.authors.length > 0 && (
-                <div className="flex items-center space-x-2 mb-4">
-                  <span className="text-zinc-400">by</span>
+                <div className="flex items-center space-x-2 mb-6">
+                  <span className="text-ink-400">by</span>
                   <div className="flex items-center space-x-2">
                     {bookData.authors.map((author, index) => (
-                      <span key={author.id} className="text-blue-400 hover:text-blue-300">
+                      <span key={author.id} className="text-ember-700 font-medium">
                         {author.name}
                         {index < bookData.authors.length - 1 && ', '}
                       </span>
@@ -117,22 +118,22 @@ export default function BookDetail() {
               )}
 
               {/* Metadata */}
-              <div className="flex flex-wrap gap-4 mb-6">
+              <div className="flex flex-wrap gap-2.5 mb-6">
                 {bookData.published_date && (
                   <Metadata
-                    icon="📅"
+                    icon={<CalendarIcon />}
                     label="Published"
                     value={new Date(bookData.published_date).getFullYear().toString()}
                   />
                 )}
                 {bookData.publisher && (
-                  <Metadata icon="🏢" label="Publisher" value={bookData.publisher} />
+                  <Metadata icon={<BuildingIcon />} label="Publisher" value={bookData.publisher} />
                 )}
                 {bookData.page_count && (
-                  <Metadata icon="📄" label="Pages" value={bookData.page_count.toString()} />
+                  <Metadata icon={<PagesIcon />} label="Pages" value={bookData.page_count.toString()} />
                 )}
                 {bookData.language && (
-                  <Metadata icon="🌐" label="Language" value={bookData.language.toUpperCase()} />
+                  <Metadata icon={<GlobeIcon />} label="Language" value={bookData.language.toUpperCase()} />
                 )}
               </div>
 
@@ -141,7 +142,7 @@ export default function BookDetail() {
                 {primaryFile && (
                   <Link
                     to={`/read/${bookData.id}/${primaryFile.id}`}
-                    className="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all duration-350 ease-soft hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(37,99,235,0.35)] active:translate-y-0"
+                    className="inline-flex items-center px-6 py-3 bg-ember-500 hover:bg-ember-600 text-cream font-semibold rounded-lg transition-all duration-350 ease-soft hover:-translate-y-0.5 hover:shadow-warm-lg active:translate-y-0"
                   >
                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
@@ -161,7 +162,7 @@ export default function BookDetail() {
                         )
                         .catch((err) => console.error('Download failed:', err))
                     }
-                    className="inline-flex items-center px-6 py-3 bg-zinc-700 hover:bg-zinc-600 text-white font-semibold rounded-lg transition-colors duration-250 group"
+                    className="inline-flex items-center px-6 py-3 bg-parchment-200 hover:bg-parchment-300 text-ink-800 font-semibold rounded-lg transition-colors duration-250 group border border-parchment-300"
                   >
                     <svg className="w-5 h-5 mr-2 transition-transform duration-250 group-hover:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -173,24 +174,24 @@ export default function BookDetail() {
 
               {/* Description */}
               {bookData.description && (
-                <div className="bg-zinc-900/50 rounded-xl p-6 border border-zinc-800">
-                  <h3 className="text-lg font-semibold text-white mb-3">Description</h3>
-                  <p className="text-zinc-300 leading-relaxed">{bookData.description}</p>
+                <div className="bg-parchment-100/70 rounded-xl p-6 border border-parchment-300">
+                  <h3 className="text-lg font-serif font-semibold text-ink-900 mb-3">Description</h3>
+                  <p className="text-ink-600 leading-relaxed">{bookData.description}</p>
                 </div>
               )}
 
               {/* Additional Info */}
               <div className="mt-6 grid grid-cols-2 gap-4">
                 {bookData.isbn_13 && (
-                  <div className="bg-zinc-900/50 rounded-lg p-4 border border-zinc-800">
-                    <div className="text-xs text-zinc-500 mb-1">ISBN-13</div>
-                    <div className="text-zinc-300 text-sm font-mono">{bookData.isbn_13}</div>
+                  <div className="bg-parchment-100/70 rounded-lg p-4 border border-parchment-300">
+                    <div className="text-xs text-ink-400 mb-1">ISBN-13</div>
+                    <div className="text-ink-700 text-sm font-mono">{bookData.isbn_13}</div>
                   </div>
                 )}
                 {primaryFile && (
-                  <div className="bg-zinc-900/50 rounded-lg p-4 border border-zinc-800">
-                    <div className="text-sm text-zinc-400 mb-1">Format</div>
-                    <div className="text-white font-semibold">{primaryFile.format}</div>
+                  <div className="bg-parchment-100/70 rounded-lg p-4 border border-parchment-300">
+                    <div className="text-sm text-ink-400 mb-1">Format</div>
+                    <div className="text-ink-900 font-semibold">{primaryFile.format}</div>
                   </div>
                 )}
               </div>
@@ -198,8 +199,8 @@ export default function BookDetail() {
               {showSeriesSection && (
                 <div className="mt-10">
                   <div className="mb-4">
-                    <h3 className="text-lg font-semibold text-zinc-200">{seriesName}</h3>
-                    <p className="text-xs text-zinc-500">
+                    <h3 className="text-lg font-serif font-semibold text-ink-900">{seriesName}</h3>
+                    <p className="text-xs text-ink-400">
                       Series{seriesTotal ? ` • ${seriesTotal} ${seriesTotal === 1 ? 'book' : 'books'}` : ''}
                     </p>
                   </div>
@@ -244,7 +245,7 @@ function SeriesBookCard({
 
   const CardBody = (
     <div className="w-24 flex-none snap-start">
-      <div className="aspect-[2/3] rounded-lg overflow-hidden bg-zinc-800 shadow-[0_6px_20px_rgba(0,0,0,0.35)] transition-transform duration-250 ease-soft group-hover:-translate-y-1">
+      <div className="aspect-[2/3] rounded-lg overflow-hidden bg-parchment-200 ring-1 ring-parchment-300 shadow-warm transition-transform duration-250 ease-soft group-hover:-translate-y-1">
         {coverUrl ? (
           <img
             src={coverUrl}
@@ -253,8 +254,8 @@ function SeriesBookCard({
             loading="lazy"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-zinc-700 to-zinc-800">
-            <svg className="w-8 h-8 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-parchment-200 to-parchment-300">
+            <svg className="w-8 h-8 text-ink-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
           </div>
@@ -262,19 +263,19 @@ function SeriesBookCard({
       </div>
 
       <div className="mt-2">
-        <p className="text-xs text-zinc-200 line-clamp-2">{entry.title}</p>
-        <p className="text-[10px] text-zinc-500 mt-0.5">{orderLabel}</p>
-        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
+        <p className="text-xs text-ink-800 line-clamp-2">{entry.title}</p>
+        <p className="text-[10px] text-ink-400 mt-0.5">{orderLabel}</p>
+        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-400">
           <span
             className={`inline-block h-1.5 w-1.5 rounded-full ${
-              isInLibrary ? 'bg-emerald-500/70' : 'bg-zinc-500/70'
+              isInLibrary ? 'bg-ember-500' : 'bg-parchment-400'
             }`}
             aria-hidden="true"
           />
           <span>{isInLibrary ? 'In library' : 'Not in library'}</span>
         </div>
         {entry.position == null && (
-          <p className="text-[10px] text-zinc-600 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-250 ease-soft">
+          <p className="text-[10px] text-ink-300 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-250 ease-soft">
             Unknown order
           </p>
         )}
@@ -306,24 +307,52 @@ function SeriesBookCard({
   );
 }
 
-function Metadata({ icon, label, value }: { icon: string; label: string; value: string }) {
+function Metadata({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="flex items-center space-x-2 text-sm">
-      <span className="text-xl">{icon}</span>
-      <div>
-        <span className="text-zinc-500">{label}:</span>
-        <span className="text-white ml-1">{value}</span>
-      </div>
+    <div className="inline-flex items-center gap-2 text-sm bg-parchment-100 border border-parchment-300 rounded-full px-3 py-1.5">
+      <span className="text-ember-600">{icon}</span>
+      <span className="text-ink-400">{label}</span>
+      <span className="text-ink-800 font-medium">{value}</span>
     </div>
+  );
+}
+
+const iconClass = 'w-4 h-4';
+function CalendarIcon() {
+  return (
+    <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  );
+}
+function BuildingIcon() {
+  return (
+    <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2M5 21H3m4-14h2m-2 4h2m6-4h2m-2 4h2M9 21v-4a2 2 0 012-2h2a2 2 0 012 2v4" />
+    </svg>
+  );
+}
+function PagesIcon() {
+  return (
+    <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  );
+}
+function GlobeIcon() {
+  return (
+    <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+    </svg>
   );
 }
 
 function LoadingState() {
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4" />
-        <p className="text-zinc-400">Loading book...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-ember-500 mx-auto mb-4" />
+        <p className="text-ink-500">Loading book...</p>
       </div>
     </div>
   );
@@ -331,16 +360,16 @@ function LoadingState() {
 
 function ErrorState() {
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <svg className="w-24 h-24 text-zinc-700 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-24 h-24 text-parchment-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <h2 className="text-2xl font-bold text-white mb-2">Book not found</h2>
-        <p className="text-zinc-400 mb-6">The book you're looking for doesn't exist</p>
+        <h2 className="text-2xl font-serif font-bold text-ink-900 mb-2">Book not found</h2>
+        <p className="text-ink-500 mb-6">The book you're looking for doesn't exist</p>
         <Link
           to="/library"
-          className="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+          className="inline-flex items-center px-6 py-3 bg-ember-500 hover:bg-ember-600 text-cream rounded-lg transition"
         >
           Back to Library
         </Link>

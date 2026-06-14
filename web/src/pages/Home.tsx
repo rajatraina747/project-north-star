@@ -75,16 +75,16 @@ export default function Home() {
   const hasBooks = recentBooks && recentBooks.length > 0;
 
   return (
-    <div className="min-h-screen bg-obsidian-950">
-      <div className="max-w-7xl mx-auto px-8 py-6 space-y-10">
+    <div className="min-h-screen">
+      <div className="max-w-7xl mx-auto px-8 py-8 space-y-12">
         {/* Continue Reading - Hero Section */}
         {hasProgress ? (
           <section className="space-y-4">
             <div>
-              <h1 className="text-3xl font-serif font-bold text-white mb-1 tracking-tight">
+              <h1 className="text-3xl font-serif font-bold text-ink-900 mb-1 tracking-tight">
                 Continue Reading
               </h1>
-              <p className="text-sm text-obsidian-400">
+              <p className="text-sm text-ink-500">
                 Pick up where you left off
               </p>
             </div>
@@ -100,25 +100,25 @@ export default function Home() {
         ) : hasBooks ? (
           <section className="space-y-6 pt-4">
             <div className="text-center max-w-md mx-auto">
-              <h1 className="text-3xl font-serif font-bold text-white mb-2 tracking-tight">
+              <h1 className="text-3xl font-serif font-bold text-ink-900 mb-2 tracking-tight">
                 Start something new
               </h1>
-              <p className="text-sm text-obsidian-400">
+              <p className="text-sm text-ink-500">
                 Your library awaits
               </p>
             </div>
 
-            {/* Featured Book - First book as hero with radial glow */}
+            {/* Featured Book - First book as hero with warm glow */}
             <div className="relative max-w-[200px] mx-auto">
               {/* Subtle radial glow behind cover */}
-              <div className="absolute inset-0 -z-10 scale-110 opacity-30">
-                <div className="absolute inset-0 bg-gradient-radial from-polaris-600/20 via-polaris-600/5 to-transparent blur-2xl" />
+              <div className="absolute inset-0 -z-10 scale-110 opacity-40">
+                <div className="absolute inset-0 bg-gradient-radial from-ember-500/20 via-ember-500/5 to-transparent blur-2xl" />
               </div>
 
               <BookCard book={recentBooks[0]} />
               <Link
                 to={`/books/${recentBooks[0].id}`}
-                className="mt-4 w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-polaris-600 to-polaris-700 text-white text-sm font-semibold rounded-lg hover:from-polaris-700 hover:to-polaris-800 hover:shadow-[0_0_24px_rgba(0,110,199,0.4)] hover:scale-[1.02] transition-all duration-350 ease-soft group active:scale-100 cta-float"
+                className="mt-4 w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-ember-500 to-ember-600 text-cream text-sm font-semibold rounded-lg hover:from-ember-600 hover:to-ember-700 hover:shadow-warm-lg hover:scale-[1.02] transition-all duration-350 ease-soft group active:scale-100 cta-float"
               >
                 <span>Start Reading</span>
                 <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-250 ease-soft" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -137,12 +137,12 @@ export default function Home() {
           <section className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-3xl font-serif font-bold text-white">Recently Added</h2>
-                <p className="text-obsidian-400 mt-1">New to your library</p>
+                <h2 className="text-3xl font-serif font-bold text-ink-900">Recently Added</h2>
+                <p className="text-ink-500 mt-1">New to your library</p>
               </div>
               <Link
                 to="/library"
-                className="text-sm text-polaris-400 hover:text-polaris-300 transition-colors duration-250 ease-soft flex items-center gap-1 group"
+                className="text-sm text-ember-600 hover:text-ember-700 transition-colors duration-250 ease-soft flex items-center gap-1 group"
               >
                 <span>Browse all</span>
                 <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-250 ease-soft" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,16 +168,16 @@ export default function Home() {
 function EmptyLibraryState() {
   return (
     <div className="text-center py-12 max-w-md mx-auto">
-      <svg className="w-20 h-20 text-obsidian-700 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-20 h-20 text-parchment-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
       </svg>
-      <h1 className="text-2xl font-serif font-bold text-white mb-2">Your library is empty</h1>
-      <p className="text-sm text-obsidian-400 mb-5">
+      <h1 className="text-2xl font-serif font-bold text-ink-900 mb-2">Your library is empty</h1>
+      <p className="text-sm text-ink-500 mb-5">
         Add your first book to begin your reading journey
       </p>
       <Link
         to="/admin"
-        className="inline-flex items-center gap-2 px-5 py-2.5 bg-polaris-600 text-white text-sm rounded-lg hover:bg-polaris-700 transition-all duration-350 ease-soft group"
+        className="inline-flex items-center gap-2 px-5 py-2.5 bg-ember-500 text-cream text-sm rounded-lg hover:bg-ember-600 transition-all duration-350 ease-soft group"
       >
         <span className="font-semibold">Add Books</span>
         <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-250 ease-soft" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -49,14 +49,14 @@ export default function Library() {
   }, [queryParam]);
 
   return (
-    <div className="min-h-screen bg-obsidian-950">
+    <div className="min-h-screen">
       {/* Header */}
-      <div className="bg-obsidian-900/50 border-b border-obsidian-800/30 sticky top-0 z-10 backdrop-blur-sm">
+      <div className="bg-parchment-50/80 border-b border-parchment-300 sticky top-0 z-10 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-serif font-bold text-white">Library</h1>
-              <p className="text-xs text-obsidian-500 mt-0.5">
+              <h1 className="text-2xl font-serif font-bold text-ink-900">Library</h1>
+              <p className="text-xs text-ink-400 mt-0.5">
                 {total} {total === 1 ? 'book' : 'books'}
               </p>
             </div>
@@ -65,7 +65,7 @@ export default function Library() {
               {/* Search - Compact */}
               <div className="relative w-48">
                 <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                  <svg className="w-4 h-4 text-obsidian-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-ink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
@@ -74,7 +74,7 @@ export default function Library() {
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-obsidian-900/50 border border-obsidian-700/50 rounded-lg text-sm text-white placeholder-obsidian-600 focus:outline-none focus:ring-1 focus:ring-polaris-600/50 focus:border-polaris-600/50 focus:bg-obsidian-900/80 transition-all duration-250 ease-soft"
+                  className="w-full pl-8 pr-3 py-1.5 bg-parchment-100 border border-parchment-300 rounded-lg text-sm text-ink-900 placeholder-ink-300 focus:outline-none focus:ring-1 focus:ring-ember-500/60 focus:border-ember-500/60 transition-all duration-250 ease-soft"
                 />
               </div>
 
@@ -83,7 +83,7 @@ export default function Library() {
                 <select
                   value={selectedAuthor}
                   onChange={(e) => setSelectedAuthor(e.target.value)}
-                  className="px-3 py-1.5 bg-obsidian-900/50 border border-obsidian-700/50 rounded-lg text-sm text-obsidian-300 focus:outline-none focus:ring-1 focus:ring-polaris-600/50 transition-all duration-250 ease-soft"
+                  className="px-3 py-1.5 bg-parchment-100 border border-parchment-300 rounded-lg text-sm text-ink-600 focus:outline-none focus:ring-1 focus:ring-ember-500/60 transition-all duration-250 ease-soft"
                 >
                   <option value="">All Authors</option>
                   {authors.map((author: any) => (
@@ -97,7 +97,7 @@ export default function Library() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as NonNullable<SearchParams['sort']>)}
-                className="px-3 py-1.5 bg-obsidian-900/50 border border-obsidian-700/50 rounded-lg text-sm text-obsidian-300 focus:outline-none focus:ring-1 focus:ring-polaris-600/50 transition-all duration-250 ease-soft"
+                className="px-3 py-1.5 bg-parchment-100 border border-parchment-300 rounded-lg text-sm text-ink-600 focus:outline-none focus:ring-1 focus:ring-ember-500/60 transition-all duration-250 ease-soft"
               >
                 <option value="title">Title</option>
                 <option value="author">Author</option>
@@ -105,13 +105,13 @@ export default function Library() {
               </select>
 
               {/* View Mode Toggle */}
-              <div className="flex items-center gap-1 bg-obsidian-900/50 rounded-lg p-0.5 border border-obsidian-700/50">
+              <div className="flex items-center gap-1 bg-parchment-100 rounded-lg p-0.5 border border-parchment-300">
                 <button
                   onClick={() => setViewMode('grid')}
                   className={`p-1.5 rounded transition-all duration-250 ease-soft ${
                     viewMode === 'grid'
-                      ? 'bg-polaris-600 text-white'
-                      : 'text-obsidian-500 hover:text-obsidian-300'
+                      ? 'bg-ember-500 text-cream'
+                      : 'text-ink-400 hover:text-ink-700'
                   }`}
                   title="Grid view"
                 >
@@ -123,8 +123,8 @@ export default function Library() {
                   onClick={() => setViewMode('list')}
                   className={`p-1.5 rounded transition-all duration-250 ease-soft ${
                     viewMode === 'list'
-                      ? 'bg-polaris-600 text-white'
-                      : 'text-obsidian-500 hover:text-obsidian-300'
+                      ? 'bg-ember-500 text-cream'
+                      : 'text-ink-400 hover:text-ink-700'
                   }`}
                   title="List view"
                 >
@@ -167,7 +167,7 @@ function LoadingState({ viewMode }: { viewMode: 'grid' | 'list' }) {
     return (
       <div className="space-y-3">
         {[...Array(8)].map((_, i) => (
-          <div key={i} className="animate-pulse bg-zinc-800 rounded-lg p-4 h-32" />
+          <div key={i} className="animate-pulse bg-parchment-200 rounded-lg p-4 h-32" />
         ))}
       </div>
     );
@@ -177,8 +177,8 @@ function LoadingState({ viewMode }: { viewMode: 'grid' | 'list' }) {
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
       {[...Array(12)].map((_, i) => (
         <div key={i} className="animate-pulse">
-          <div className="aspect-[2/3] bg-zinc-800 rounded-lg" />
-          <div className="mt-2 h-4 bg-zinc-800 rounded" />
+          <div className="aspect-[2/3] bg-parchment-200 rounded-xl" />
+          <div className="mt-2 h-4 bg-parchment-200 rounded" />
         </div>
       ))}
     </div>
@@ -188,20 +188,20 @@ function LoadingState({ viewMode }: { viewMode: 'grid' | 'list' }) {
 function EmptyState({ searchQuery }: { searchQuery: string }) {
   return (
     <div className="text-center py-16">
-      <svg className="w-24 h-24 text-zinc-700 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-24 h-24 text-parchment-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
-      <h3 className="text-xl font-semibold text-white mb-2">
+      <h3 className="text-xl font-serif font-semibold text-ink-900 mb-2">
         {searchQuery ? 'No books found' : 'No books yet'}
       </h3>
-      <p className="text-zinc-400">
+      <p className="text-ink-500">
         {searchQuery ? `No results for "${searchQuery}"` : 'Start adding books to your library'}
       </p>
       {searchQuery && (
         <div className="mt-6">
           <Link
             to="/admin"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-polaris-600 text-white text-sm rounded-lg hover:bg-polaris-700 transition-all duration-350 ease-soft group"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-ember-500 text-cream text-sm rounded-lg hover:bg-ember-600 transition-all duration-350 ease-soft group"
           >
             <span className="font-semibold">Add books</span>
             <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-250 ease-soft" fill="none" stroke="currentColor" viewBox="0 0 24 24">
