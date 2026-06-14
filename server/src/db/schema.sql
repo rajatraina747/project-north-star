@@ -252,10 +252,9 @@ DROP TRIGGER IF EXISTS update_reading_progress_updated_at ON reading_progress;
 CREATE TRIGGER update_reading_progress_updated_at BEFORE UPDATE ON reading_progress
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Create default admin user (password: 'admin' - CHANGE THIS!)
-INSERT INTO users (username, email, password_hash, display_name, is_admin)
-VALUES ('admin', 'admin@northstar.local', '$2b$10$XnVgFukRcz5afBKDEMvKHedCBuYWoUpTRJ8d30JBjLGlor2V5i0GO', 'Administrator', true)
-ON CONFLICT (username) DO NOTHING;
+-- No default admin user is seeded. On a fresh database the POST /api/auth/register
+-- endpoint is open until the first user (admin) is created, after which it is
+-- permanently closed. Run migrations and then call /register to create your admin.
 
 -- Create default settings
 INSERT INTO settings (key, value) VALUES

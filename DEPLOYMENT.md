@@ -2,106 +2,176 @@
 
 ## Pre-Deployment Checklist
 
-- [ ] Update `.env` with production values
-- [ ] Change default admin password
-- [ ] Set strong JWT_SECRET
-- [ ] Configure production database
-- [ ] Set up backup strategy
-- [ ] Configure reverse proxy (nginx/caddy)
-- [ ] Set up SSL/TLS certificates
+- [ ] Generate a strong `JWT_SECRET` (`openssl rand -base64 64`)
+- [ ] Set a strong `POSTGRES_PASSWORD` in `.env`
+- [ ] Set `CORS_ORIGIN` to your public frontend URL
+- [ ] Place all values in a `.env` file (never commit it)
+- [ ] Put a TLS-terminating reverse proxy in front of port 8080
+- [ ] Run database migrations and create the initial admin via `/register`
+- [ ] Set up a database backup strategy
+- [ ] (Optional) Obtain a Google Books API key for richer metadata
 
-## Production Environment Variables
+## Required Environment Variables
 
-Create a production `.env` file:
+Copy `.env.example` to `.env` and fill in every value before starting:
 
 ```bash
-# Database
-DATABASE_URL=postgresql://user:password@db-host:5432/northstar
-
-# Server
-PORT=3000
-NODE_ENV=production
-
-# Paths (absolute paths)
-BOOKS_PATH=/var/lib/northstar/books
-COVERS_PATH=/var/lib/northstar/covers
-THUMBNAILS_PATH=/var/lib/northstar/thumbnails
-CONFIG_PATH=/var/lib/northstar/config
-
-# Security
-JWT_SECRET=<generate-a-strong-random-secret>
-
-# Optional
-GOOGLE_BOOKS_API_KEY=your-api-key-here
+cp .env.example .env
 ```
 
-## Docker Deployment (Recommended)
+| Variable | Required | Description |
+|---|---|---|
+| `POSTGRES_PASSWORD` | **Yes** | Strong password for the Postgres user |
+| `JWT_SECRET` | **Yes** | Random 64-byte secret — `openssl rand -base64 64` |
+| `CORS_ORIGIN` | Recommended | Public URL of the web UI, e.g. `https://books.example.com` |
+| `BOOKS_LIBRARY_PATH` | Yes | Absolute path to your EPUB/PDF files on the host |
+| `GOOGLE_BOOKS_API_KEY` | No | Improves metadata quality |
 
-### 1. Build and Start Services
+## TLS / HTTPS (Required for Production)
+
+**The included nginx container listens on HTTP only (port 80 inside the container,
+mapped to `WEB_PORT` on the host).  You MUST terminate TLS outside this stack.**
+
+Put a TLS-aware reverse proxy in front before exposing to the internet:
+
+### Option A — Caddy (simplest, auto-HTTPS)
+
+```caddyfile
+books.example.com {
+    reverse_proxy localhost:8080
+}
+```
+
+### Option B — nginx + Let's Encrypt (certbot)
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name books.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/books.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/books.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 80;
+    server_name books.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+Obtain a certificate with certbot:
+```bash
+sudo certbot --nginx -d books.example.com
+```
+
+### Firewall
+
+Only expose ports needed by your reverse proxy (80, 443).  The Postgres port
+is intentionally not published by docker-compose — never expose it to the host
+or internet.
 
 ```bash
-# Build images
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw enable
+```
+
+## Docker Deployment
+
+### 1. Prepare the environment file
+
+```bash
+cp .env.example .env
+# Fill in POSTGRES_PASSWORD, JWT_SECRET, CORS_ORIGIN, BOOKS_LIBRARY_PATH
+```
+
+### 2. Build and start services
+
+```bash
 docker-compose build
-
-# Start services
 docker-compose up -d
-
-# Run database migrations
-docker-compose exec api npm run migrate
-
-# Check logs
-docker-compose logs -f
 ```
 
-### 2. Access the Application
+### 3. Run database migrations
 
-- Web UI: http://your-server:5173
-- API: http://your-server:3000
-- Default login: admin/admin (CHANGE THIS!)
+```bash
+docker-compose exec api npm run migrate
+```
 
-### 3. Add Books
+### 4. Create the initial admin account
+
+On a fresh database **no admin account exists**.  Open the web UI (or use curl)
+and call `/register` once to create your admin:
+
+```bash
+curl -s -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","email":"you@example.com","password":"<strong-password>","display_name":"Admin"}'
+```
+
+`/register` accepts requests only when zero users exist — it closes itself
+automatically after the first account is created.
+
+### 5. Add books and trigger a scan
 
 ```bash
 # Copy books to the mounted volume
-cp /path/to/books/*.epub /path/to/northstar/books/
+cp /path/to/books/*.epub "${BOOKS_LIBRARY_PATH}/"
 
-# Trigger scan from web UI Admin panel
-# Or via API:
-curl -X POST http://your-server:3000/api/admin/scan \
-  -H "Authorization: Bearer YOUR_TOKEN"
+# Trigger scan (replace TOKEN with the token from the register response)
+curl -X POST http://localhost:8080/api/admin/scan \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 6. Check logs
+
+```bash
+docker-compose logs -f api
+docker-compose logs -f worker
+docker-compose logs -f postgres
 ```
 
 ## Manual Deployment
 
-### 1. Set Up Database
+### 1. Set up the database
 
 ```bash
-# Install PostgreSQL 16
-# Create database and user
 createdb northstar
 createuser -P northstar
-
-# Run migrations
-cd server
-npm run migrate
+psql northstar -c "GRANT ALL PRIVILEGES ON DATABASE northstar TO northstar;"
+psql northstar -c "GRANT ALL ON SCHEMA public TO northstar;"
 ```
 
-### 2. Build Frontend
+### 2. Build the frontend
 
 ```bash
 cd web
 npm install
 npm run build
-
-# Serve build directory with nginx or similar
-# Build output is in: web/dist/
+# Serve web/dist/ with nginx or caddy (with TLS)
 ```
 
-### 3. Start Backend Services
+### 3. Build and start backend services
 
 ```bash
 cd server
 npm install
+npm run build
+
+# Copy .env.example → .env and fill in values
+cp .env.example .env
+
+# Run migrations
+npm run migrate
 
 # Start API server (use pm2 or systemd)
 pm2 start npm --name northstar-api -- run start
@@ -109,17 +179,29 @@ pm2 start npm --name northstar-api -- run start
 # Start worker service
 pm2 start npm --name northstar-worker -- run worker
 
-# Save pm2 process list
-pm2 save
-pm2 startup
+pm2 save && pm2 startup
 ```
 
-## Nginx Configuration
+### 4. Create the initial admin account
+
+Visit the `/register` endpoint once to create your admin (same curl command as
+in the Docker section above, pointing at your server's host/port).
+
+## nginx Configuration (for manual deploys)
 
 ```nginx
 server {
     listen 80;
     server_name your-domain.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    ssl_certificate     /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
 
     # Frontend
     location / {
@@ -131,173 +213,87 @@ server {
     location /api {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-
-    # Health check
-    location /health {
-        proxy_pass http://localhost:3000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-## SSL/TLS with Let's Encrypt
-
-```bash
-# Install certbot
-sudo apt install certbot python3-certbot-nginx
-
-# Obtain certificate
-sudo certbot --nginx -d your-domain.com
-
-# Auto-renewal is configured by default
-```
-
 ## Backup Strategy
 
-### Database Backups
+### Database
 
 ```bash
-# Daily backup script
 #!/bin/bash
 DATE=$(date +%Y%m%d_%H%M%S)
 pg_dump northstar | gzip > /backups/northstar_$DATE.sql.gz
-
-# Keep last 30 days
 find /backups -name "northstar_*.sql.gz" -mtime +30 -delete
 ```
 
-### Book Files & Covers
+### Book files and covers
 
 ```bash
-# Rsync to backup location
 rsync -av /var/lib/northstar/ /backups/northstar-data/
 ```
 
 ## Monitoring
 
-### Health Check Endpoint
-
 ```bash
+# Health check
 curl http://localhost:3000/health
-```
 
-### Log Locations (Docker)
-
-```bash
-# API logs
+# API logs (Docker)
 docker-compose logs -f api
 
-# Worker logs
+# Worker logs (Docker)
 docker-compose logs -f worker
-
-# Database logs
-docker-compose logs -f postgres
 ```
-
-## Security Hardening
-
-1. **Change Default Password**
-   - Login and change admin password immediately
-   - Or update via database directly
-
-2. **Firewall Rules**
-   ```bash
-   # Allow only necessary ports
-   ufw allow 80/tcp
-   ufw allow 443/tcp
-   ufw enable
-   ```
-
-3. **Database Security**
-   - Use strong passwords
-   - Restrict PostgreSQL to localhost or internal network
-   - Enable SSL connections
-
-4. **JWT Secret**
-   - Generate strong random secret: `openssl rand -base64 64`
-   - Never commit to git
 
 ## Troubleshooting
 
-### Database Connection Issues
+### Server refuses to start with JWT_SECRET error
+
+The API will exit immediately if `JWT_SECRET` is unset or set to the default
+value in `NODE_ENV=production`.  Generate a secret and add it to your `.env`:
 
 ```bash
-# Test database connection
-psql $DATABASE_URL -c "SELECT 1"
-
-# Check PostgreSQL is running
-docker-compose ps postgres
-# or
-systemctl status postgresql
+echo "JWT_SECRET=$(openssl rand -base64 64)" >> .env
 ```
 
-### API Not Responding
+### Database connection issues
 
 ```bash
-# Check logs
-docker-compose logs api
-
-# Verify port is listening
-netstat -tlnp | grep 3000
+# Test from the host (Postgres is NOT port-forwarded to the host in production)
+docker-compose exec postgres psql -U northstar -c "SELECT 1"
 ```
 
-### Books Not Appearing
+### Books not appearing
 
 ```bash
 # Check scan status
 curl http://localhost:3000/api/admin/scans \
-  -H "Authorization: Bearer TOKEN"
+  -H "Authorization: Bearer $TOKEN"
 
-# Check worker logs
 docker-compose logs worker
-
-# Verify file permissions
-ls -la /var/lib/northstar/books/
 ```
 
 ## Scaling
 
-### Read Replicas
-
-- Set up PostgreSQL read replicas for read-heavy workloads
-- Configure pgpool-II for connection pooling
-
-### Load Balancing
-
-- Use nginx/haproxy to load balance multiple API instances
-- Ensure shared storage for book files and covers
-
-### Caching
-
-- Add Redis for session storage and API caching
-- Enable nginx caching for static assets
+- Use PostgreSQL read replicas for read-heavy workloads
+- Load-balance multiple `api` replicas behind nginx/haproxy
+- Multiple `worker` replicas are safe — the worker uses a Postgres advisory
+  lock to prevent two replicas from processing the same scan simultaneously
 
 ## Updates
 
 ```bash
-# Pull latest changes
 git pull origin main
-
-# Rebuild and restart
 docker-compose build
 docker-compose up -d
-
-# Run migrations if needed
 docker-compose exec api npm run migrate
 ```
-
-## Support
-
-For issues and questions:
-- Check logs first
-- Review this deployment guide
-- Check the main README.md
 
 ---
 

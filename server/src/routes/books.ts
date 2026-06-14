@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import db from '../db';
 import { logger } from '../utils/logger';
 import { config } from '../utils/config';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth';
 import { Book, BookWithDetails, Author, Series, Tag, BookFile, UpdateBookRequest } from '../types';
 import { buildSeriesContext } from '../services/series';
 
@@ -14,7 +14,7 @@ const router = Router();
  * Safely resolve a DB-provided relative path inside a trusted base directory.
  * Returns null if the resolved path would escape the base (path traversal).
  */
-function resolveWithin(baseDir: string, relativePath: string): string | null {
+export function resolveWithin(baseDir: string, relativePath: string): string | null {
   const base = path.resolve(baseDir);
   const resolved = path.resolve(base, relativePath);
   if (resolved !== base && !resolved.startsWith(base + path.sep)) {
@@ -256,8 +256,8 @@ router.get('/:id', async (req: AuthRequest, res) => {
   }
 });
 
-// Update book metadata
-router.patch('/:id', async (req: AuthRequest, res) => {
+// Update book metadata (admin only — metadata changes affect all users)
+router.patch('/:id', requireAdmin, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const updates = req.body as UpdateBookRequest;
@@ -385,12 +385,10 @@ router.get('/:id/file/:fileId', async (req: AuthRequest, res) => {
       await fs.access(fullPath);
       const mimeType = file.format === 'EPUB' ? 'application/epub+zip' : 'application/pdf';
 
-      // Set proper headers for epub.js and PDF.js
+      // Headers for epub.js / PDF.js byte-range support.
+      // CORS is handled by the global cors() middleware — no manual header here.
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Range');
       res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
 
       res.sendFile(fullPath);
@@ -403,8 +401,8 @@ router.get('/:id/file/:fileId', async (req: AuthRequest, res) => {
   }
 });
 
-// Delete book
-router.delete('/:id', async (req: AuthRequest, res) => {
+// Delete book (admin only)
+router.delete('/:id', requireAdmin, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
 

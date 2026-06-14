@@ -15,7 +15,6 @@ class WorkerService {
   private metadataExtractor: MetadataExtractor;
   private metadataEnricher: MetadataEnricher;
   private coverGenerator: CoverGenerator;
-  private isProcessing: boolean = false;
 
   constructor() {
     this.scanner = new LibraryScanner();
@@ -53,10 +52,6 @@ class WorkerService {
    */
   private startScanMonitor(): void {
     setInterval(async () => {
-      if (this.isProcessing) {
-        return;
-      }
-
       try {
         const pendingScan = await db.oneOrNone<ScanHistory>(
           `SELECT * FROM scan_history
@@ -98,38 +93,47 @@ class WorkerService {
   }
 
   /**
-   * Process a library scan
+   * Process a library scan, guarded by a Postgres session-level advisory lock.
+   *
+   * db.task() checks out a single connection and reuses it for every query
+   * inside the callback, which means the advisory lock and unlock run on the
+   * same backend session — required for session-scoped advisory locks.
+   *
+   * If another worker replica holds the lock for this scanId, pg_try_advisory_lock
+   * returns false immediately (non-blocking) and we skip processing.
    */
   private async processScan(scanId: string): Promise<void> {
-    if (this.isProcessing) {
-      logger.warn(`Already processing a scan, skipping ${scanId}`);
-      return;
-    }
+    await db.task(async (t) => {
+      const { acquired } = await t.one<{ acquired: boolean }>(
+        `SELECT pg_try_advisory_lock(hashtext($1)) AS acquired`,
+        [`northstar_scan:${scanId}`]
+      );
 
-    this.isProcessing = true;
-
-    try {
-      logger.info(`Processing scan ${scanId}`);
-
-      // Run the scanner
-      const result = await this.scanner.scan(scanId);
-
-      logger.info(`Scan ${scanId} completed: ${result.added} added, ${result.updated} updated, ${result.removed} removed`);
-
-      // Process metadata for books that need it (new books or books without metadata/covers)
-      await this.processNewBooks();
-
-      // Refresh any stale series catalogs (off the request path).
-      try {
-        await refreshStaleSeries();
-      } catch (error) {
-        logger.error('Stale series refresh failed:', error);
+      if (!acquired) {
+        logger.warn(`Scan ${scanId} is already being processed by another worker`);
+        return;
       }
-    } catch (error) {
-      logger.error(`Scan ${scanId} failed:`, error);
-    } finally {
-      this.isProcessing = false;
-    }
+
+      try {
+        logger.info(`Processing scan ${scanId}`);
+
+        const result = await this.scanner.scan(scanId);
+
+        logger.info(`Scan ${scanId} completed: ${result.added} added, ${result.updated} updated, ${result.removed} removed`);
+
+        await this.processNewBooks();
+
+        try {
+          await refreshStaleSeries();
+        } catch (error) {
+          logger.error('Stale series refresh failed:', error);
+        }
+      } catch (error) {
+        logger.error(`Scan ${scanId} failed:`, error);
+      } finally {
+        await t.none(`SELECT pg_advisory_unlock(hashtext($1))`, [`northstar_scan:${scanId}`]);
+      }
+    });
   }
 
   /**

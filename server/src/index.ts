@@ -26,6 +26,11 @@ async function startServer() {
 
     const app = express();
 
+    // Trust exactly one proxy hop (the nginx container). This makes
+    // express-rate-limit key on the real client IP from X-Forwarded-For
+    // rather than the nginx container IP.
+    app.set('trust proxy', 1);
+
     // Security middleware. This server only serves JSON + file downloads (the
     // SPA/reader HTML is served by nginx), so the default helmet CSP is safe
     // here. Allow cross-origin resource fetches so the web app can load covers
@@ -88,12 +93,14 @@ async function startServer() {
     app.use('/api/search', searchRoutes);
     app.use('/api/admin', adminRoutes);
 
-    // Error handler
+    // Error handler — never expose internal error details to clients in production.
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
       logger.error('Error:', err);
-      res.status(err.status || 500).json({
-        error: err.message || 'Internal server error',
-      });
+      const status = err.status || 500;
+      const message = config.nodeEnv === 'production' && status === 500
+        ? 'Internal server error'
+        : (err.message || 'Internal server error');
+      res.status(status).json({ error: message });
     });
 
     // 404 handler

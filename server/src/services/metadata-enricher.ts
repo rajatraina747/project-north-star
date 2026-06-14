@@ -1,7 +1,26 @@
 import axios from 'axios';
+import { URL } from 'url';
 import { logger } from '../utils/logger';
 import { config } from '../utils/config';
 import { GoogleBooksResult, OpenLibraryResult, ExtractedMetadata } from '../types';
+
+// Hosts permitted for cover image downloads. Anything else is rejected to
+// prevent the worker from being used as an SSRF proxy.
+const COVER_ALLOWED_HOSTS = new Set([
+  'books.google.com',
+  'books.googleusercontent.com',
+  'lh3.googleusercontent.com',
+  'covers.openlibrary.org',
+]);
+
+function isCoverUrlAllowed(rawUrl: string): boolean {
+  try {
+    const { hostname } = new URL(rawUrl);
+    return COVER_ALLOWED_HOSTS.has(hostname);
+  } catch {
+    return false;
+  }
+}
 
 export class MetadataEnricher {
   private googleBooksApiKey: string;
@@ -189,12 +208,16 @@ export class MetadataEnricher {
     if (result.imageLinks?.thumbnail) {
       try {
         const coverUrl = result.imageLinks.thumbnail.replace('http:', 'https:');
-        const response = await axios.get(coverUrl, {
-          responseType: 'arraybuffer',
-          timeout: 10000,
-        });
-        metadata.coverImage = Buffer.from(response.data);
-        logger.info('Downloaded cover from Google Books');
+        if (!isCoverUrlAllowed(coverUrl)) {
+          logger.warn(`Skipping cover download from disallowed host: ${coverUrl}`);
+        } else {
+          const response = await axios.get(coverUrl, {
+            responseType: 'arraybuffer',
+            timeout: 10000,
+          });
+          metadata.coverImage = Buffer.from(response.data);
+          logger.info('Downloaded cover from Google Books');
+        }
       } catch (error) {
         logger.error('Failed to download Google Books cover:', error);
       }
@@ -222,12 +245,16 @@ export class MetadataEnricher {
       try {
         const coverId = result.covers[0];
         const coverUrl = `https://covers.openlibrary.org/b/id/${coverId}-L.jpg`;
-        const response = await axios.get(coverUrl, {
-          responseType: 'arraybuffer',
-          timeout: 10000,
-        });
-        metadata.coverImage = Buffer.from(response.data);
-        logger.info('Downloaded cover from Open Library');
+        if (!isCoverUrlAllowed(coverUrl)) {
+          logger.warn(`Skipping cover download from disallowed host: ${coverUrl}`);
+        } else {
+          const response = await axios.get(coverUrl, {
+            responseType: 'arraybuffer',
+            timeout: 10000,
+          });
+          metadata.coverImage = Buffer.from(response.data);
+          logger.info('Downloaded cover from Open Library');
+        }
       } catch (error) {
         logger.error('Failed to download Open Library cover:', error);
       }

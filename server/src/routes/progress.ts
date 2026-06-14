@@ -46,6 +46,13 @@ router.put('/:bookId/:fileId', async (req: AuthRequest, res) => {
     const { bookId, fileId } = req.params;
     const data = req.body as UpdateProgressRequest;
 
+    if (data.device_info !== undefined && data.device_info !== null) {
+      if (typeof data.device_info !== 'string' || data.device_info.length > 500) {
+        res.status(400).json({ error: 'device_info must be a string of at most 500 characters' });
+        return;
+      }
+    }
+
     const progress = await db.one<ReadingProgress>(
       `INSERT INTO reading_progress
        (user_id, book_id, book_file_id, progress_percent, epub_cfi, pdf_page, pdf_scroll_position, device_info, last_read_at)

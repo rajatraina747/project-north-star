@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import path from 'path';
 
 dotenv.config();
 
@@ -19,7 +18,9 @@ export const config = {
 
   // JWT
   jwtSecret: process.env.JWT_SECRET || 'change-me-in-production-please',
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  // 24 h default — short enough to limit the damage if a localStorage-stored
+  // token is stolen via XSS, while still comfortable for normal use.
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
 
   // API Keys
   googleBooksApiKey: process.env.GOOGLE_BOOKS_API_KEY || '',
@@ -42,8 +43,10 @@ export const config = {
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
 };
 
+const DEFAULT_JWT_SECRET = 'change-me-in-production-please';
+
 export function validateConfig(): void {
-  const required = ['databaseUrl', 'jwtSecret'];
+  const required = ['databaseUrl'];
 
   for (const key of required) {
     if (!config[key as keyof typeof config]) {
@@ -51,8 +54,12 @@ export function validateConfig(): void {
     }
   }
 
-  // Warn about default JWT secret
-  if (config.jwtSecret === 'change-me-in-production-please' && config.nodeEnv === 'production') {
-    console.warn('WARNING: Using default JWT secret in production! Please set JWT_SECRET environment variable.');
+  if (config.nodeEnv === 'production') {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET must be set in production. Generate one with: openssl rand -base64 64');
+    }
+    if (config.jwtSecret === DEFAULT_JWT_SECRET) {
+      throw new Error('JWT_SECRET is set to the insecure default in production. Set a strong random secret.');
+    }
   }
 }
