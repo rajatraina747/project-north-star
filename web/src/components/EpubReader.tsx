@@ -86,7 +86,9 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
                   book.locations.load(storedLocations);
 
                   // Verify cache is valid (total should be > 0)
-                  if (!book.locations.total || book.locations.total <= 0) {
+                  // `total` exists at runtime but is missing from epubjs types.
+                  const total = (book.locations as any).total;
+                  if (!total || total <= 0) {
                     await book.locations.generate(1200);
                   }
                 } catch {
@@ -104,8 +106,9 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
             } finally {
               locationsReadyRef.current = true;
 
-              // Trigger progress update now that locations are ready
-              const currentLoc = rendition.currentLocation();
+              // Trigger progress update now that locations are ready.
+              // currentLocation()'s runtime shape (with `.start`) isn't in the types.
+              const currentLoc = rendition.currentLocation() as any;
               if (currentLoc?.start?.cfi) {
                 const percent = book.locations?.percentageFromCfi(currentLoc.start.cfi);
                 if (typeof percent === 'number') {

@@ -212,16 +212,35 @@ router.patch('/:id', async (req: AuthRequest, res) => {
       return;
     }
 
+    // Whitelist of columns clients are allowed to update. Anything else
+    // (including SQL fragments or protected columns like created_at/series_id)
+    // is ignored rather than interpolated into the query.
+    const allowedFields: (keyof UpdateBookRequest)[] = [
+      'title',
+      'subtitle',
+      'description',
+      'publisher',
+      'published_date',
+      'language',
+      'isbn_10',
+      'isbn_13',
+      'series_id',
+      'series_index',
+      'page_count',
+      'metadata_locked',
+    ];
+
     const fields: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
 
-    Object.entries(updates).forEach(([key, value]) => {
+    for (const key of allowedFields) {
+      const value = updates[key];
       if (value !== undefined) {
         fields.push(`${key} = $${paramIndex++}`);
         values.push(value);
       }
-    });
+    }
 
     if (fields.length === 0) {
       res.status(400).json({ error: 'No fields to update' });

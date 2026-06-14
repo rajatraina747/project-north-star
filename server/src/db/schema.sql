@@ -1,11 +1,15 @@
 -- North Star Database Schema
 -- PostgreSQL 16+
+--
+-- This script is idempotent: it can be run repeatedly (e.g. on every deploy)
+-- without error. Tables/indexes use IF NOT EXISTS, triggers are dropped before
+-- being recreated, and seed rows use ON CONFLICT DO NOTHING.
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Users table (designed for future multi-user support)
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username VARCHAR(255) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -17,7 +21,7 @@ CREATE TABLE users (
 );
 
 -- Authors table
-CREATE TABLE authors (
+CREATE TABLE IF NOT EXISTS authors (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(500) NOT NULL,
     sort_name VARCHAR(500),
@@ -27,7 +31,7 @@ CREATE TABLE authors (
 );
 
 -- Series table
-CREATE TABLE series (
+CREATE TABLE IF NOT EXISTS series (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(500) NOT NULL,
     description TEXT,
@@ -44,7 +48,7 @@ CREATE TABLE series (
 );
 
 -- Books table
-CREATE TABLE books (
+CREATE TABLE IF NOT EXISTS books (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title VARCHAR(1000) NOT NULL,
     sort_title VARCHAR(1000),
@@ -70,7 +74,7 @@ CREATE TABLE books (
 );
 
 -- Book-Author relationship (many-to-many)
-CREATE TABLE book_authors (
+CREATE TABLE IF NOT EXISTS book_authors (
     book_id UUID REFERENCES books(id) ON DELETE CASCADE,
     author_id UUID REFERENCES authors(id) ON DELETE CASCADE,
     author_index INTEGER DEFAULT 0,
@@ -78,7 +82,7 @@ CREATE TABLE book_authors (
 );
 
 -- Book files (one book can have multiple formats)
-CREATE TABLE book_files (
+CREATE TABLE IF NOT EXISTS book_files (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     book_id UUID REFERENCES books(id) ON DELETE CASCADE,
     file_path VARCHAR(2000) NOT NULL,
@@ -92,21 +96,21 @@ CREATE TABLE book_files (
 );
 
 -- Tags/Collections
-CREATE TABLE tags (
+CREATE TABLE IF NOT EXISTS tags (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL UNIQUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Book-Tag relationship
-CREATE TABLE book_tags (
+CREATE TABLE IF NOT EXISTS book_tags (
     book_id UUID REFERENCES books(id) ON DELETE CASCADE,
     tag_id UUID REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (book_id, tag_id)
 );
 
 -- Metadata sources (track where metadata came from)
-CREATE TABLE metadata_sources (
+CREATE TABLE IF NOT EXISTS metadata_sources (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     book_id UUID REFERENCES books(id) ON DELETE CASCADE,
     source_type VARCHAR(50) NOT NULL CHECK (source_type IN ('EMBEDDED', 'FILENAME', 'GOOGLE_BOOKS', 'OPEN_LIBRARY', 'MANUAL')),
@@ -117,7 +121,7 @@ CREATE TABLE metadata_sources (
 );
 
 -- Reading progress/state
-CREATE TABLE reading_progress (
+CREATE TABLE IF NOT EXISTS reading_progress (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     book_id UUID REFERENCES books(id) ON DELETE CASCADE,
@@ -141,7 +145,7 @@ CREATE TABLE reading_progress (
 );
 
 -- Library scan history
-CREATE TABLE scan_history (
+CREATE TABLE IF NOT EXISTS scan_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP WITH TIME ZONE,
@@ -154,14 +158,14 @@ CREATE TABLE scan_history (
 );
 
 -- Application settings
-CREATE TABLE settings (
+CREATE TABLE IF NOT EXISTS settings (
     key VARCHAR(255) PRIMARY KEY,
     value JSONB NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Series catalog entries (cached)
-CREATE TABLE series_entries (
+CREATE TABLE IF NOT EXISTS series_entries (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     series_id UUID REFERENCES series(id) ON DELETE CASCADE,
     provider_work_id VARCHAR(255),
@@ -178,7 +182,7 @@ CREATE TABLE series_entries (
 );
 
 -- Optional explicit match table
-CREATE TABLE series_book_match (
+CREATE TABLE IF NOT EXISTS series_book_match (
     series_id UUID REFERENCES series(id) ON DELETE CASCADE,
     provider_work_id VARCHAR(255),
     book_id UUID REFERENCES books(id) ON DELETE CASCADE,
@@ -188,28 +192,28 @@ CREATE TABLE series_book_match (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_books_title ON books(title);
-CREATE INDEX idx_books_sort_title ON books(sort_title);
-CREATE INDEX idx_books_series ON books(series_id);
-CREATE INDEX idx_books_series_key ON books(series_key);
-CREATE INDEX idx_series_key ON series(series_key);
-CREATE INDEX idx_series_entries_series_id ON series_entries(series_id);
-CREATE INDEX idx_series_entries_isbn13 ON series_entries(isbn13);
-CREATE INDEX idx_series_book_match_book_id ON series_book_match(book_id);
-CREATE INDEX idx_authors_name ON authors(name);
-CREATE INDEX idx_authors_sort_name ON authors(sort_name);
-CREATE INDEX idx_book_files_book_id ON book_files(book_id);
-CREATE INDEX idx_book_files_hash ON book_files(file_hash);
-CREATE INDEX idx_book_files_format ON book_files(format);
-CREATE INDEX idx_reading_progress_user_book ON reading_progress(user_id, book_id);
-CREATE INDEX idx_reading_progress_last_read ON reading_progress(last_read_at DESC);
-CREATE INDEX idx_metadata_sources_book ON metadata_sources(book_id);
-CREATE INDEX idx_scan_history_started ON scan_history(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_books_title ON books(title);
+CREATE INDEX IF NOT EXISTS idx_books_sort_title ON books(sort_title);
+CREATE INDEX IF NOT EXISTS idx_books_series ON books(series_id);
+CREATE INDEX IF NOT EXISTS idx_books_series_key ON books(series_key);
+CREATE INDEX IF NOT EXISTS idx_series_key ON series(series_key);
+CREATE INDEX IF NOT EXISTS idx_series_entries_series_id ON series_entries(series_id);
+CREATE INDEX IF NOT EXISTS idx_series_entries_isbn13 ON series_entries(isbn13);
+CREATE INDEX IF NOT EXISTS idx_series_book_match_book_id ON series_book_match(book_id);
+CREATE INDEX IF NOT EXISTS idx_authors_name ON authors(name);
+CREATE INDEX IF NOT EXISTS idx_authors_sort_name ON authors(sort_name);
+CREATE INDEX IF NOT EXISTS idx_book_files_book_id ON book_files(book_id);
+CREATE INDEX IF NOT EXISTS idx_book_files_hash ON book_files(file_hash);
+CREATE INDEX IF NOT EXISTS idx_book_files_format ON book_files(format);
+CREATE INDEX IF NOT EXISTS idx_reading_progress_user_book ON reading_progress(user_id, book_id);
+CREATE INDEX IF NOT EXISTS idx_reading_progress_last_read ON reading_progress(last_read_at DESC);
+CREATE INDEX IF NOT EXISTS idx_metadata_sources_book ON metadata_sources(book_id);
+CREATE INDEX IF NOT EXISTS idx_scan_history_started ON scan_history(started_at DESC);
 
 -- Full-text search indexes
-CREATE INDEX idx_books_title_search ON books USING GIN(to_tsvector('english', title));
-CREATE INDEX idx_books_description_search ON books USING GIN(to_tsvector('english', description));
-CREATE INDEX idx_authors_name_search ON authors USING GIN(to_tsvector('english', name));
+CREATE INDEX IF NOT EXISTS idx_books_title_search ON books USING GIN(to_tsvector('english', title));
+CREATE INDEX IF NOT EXISTS idx_books_description_search ON books USING GIN(to_tsvector('english', COALESCE(description, '')));
+CREATE INDEX IF NOT EXISTS idx_authors_name_search ON authors USING GIN(to_tsvector('english', name));
 
 -- Trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -220,30 +224,38 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_books_updated_at ON books;
 CREATE TRIGGER update_books_updated_at BEFORE UPDATE ON books
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_authors_updated_at ON authors;
 CREATE TRIGGER update_authors_updated_at BEFORE UPDATE ON authors
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_series_updated_at ON series;
 CREATE TRIGGER update_series_updated_at BEFORE UPDATE ON series
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_series_entries_updated_at ON series_entries;
 CREATE TRIGGER update_series_entries_updated_at BEFORE UPDATE ON series_entries
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_book_files_updated_at ON book_files;
 CREATE TRIGGER update_book_files_updated_at BEFORE UPDATE ON book_files
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_reading_progress_updated_at ON reading_progress;
 CREATE TRIGGER update_reading_progress_updated_at BEFORE UPDATE ON reading_progress
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Create default admin user (password: 'admin' - CHANGE THIS!)
 INSERT INTO users (username, email, password_hash, display_name, is_admin)
-VALUES ('admin', 'admin@northstar.local', '$2b$10$rKvVPZZ8k8W8xN7VZ9zGXO1qO0Y6oH0gG0mB8L8zGXO1qO0Y6oH0g', 'Administrator', true);
+VALUES ('admin', 'admin@northstar.local', '$2b$10$XnVgFukRcz5afBKDEMvKHedCBuYWoUpTRJ8d30JBjLGlor2V5i0GO', 'Administrator', true)
+ON CONFLICT (username) DO NOTHING;
 
 -- Create default settings
 INSERT INTO settings (key, value) VALUES
@@ -252,4 +264,5 @@ INSERT INTO settings (key, value) VALUES
     ('metadata_agents', '["GOOGLE_BOOKS", "OPEN_LIBRARY"]'),
     ('auto_scan_enabled', 'false'),
     ('cover_quality', '90'),
-    ('thumbnail_size', '300');
+    ('thumbnail_size', '300')
+ON CONFLICT (key) DO NOTHING;

@@ -35,6 +35,7 @@ export class LibraryScanner {
       // Get existing files from database
       const dbFiles = await db.manyOrNone<BookFile>('SELECT * FROM book_files');
       const dbFileMap = new Map(dbFiles?.map(f => [f.file_path, f]) || []);
+      const dbFileByHash = new Map((dbFiles || []).map(f => [f.file_hash, f]));
 
       // Process each file
       for (const filePath of diskFiles) {
@@ -45,17 +46,38 @@ export class LibraryScanner {
 
           const existingFile = dbFileMap.get(relativePath);
 
-          if (!existingFile) {
-            // New file
-            await this.addNewFile(filePath, relativePath, fileHash, stats.size, stats.mtime);
-            filesAdded++;
-            logger.info(`Added new file: ${relativePath}`);
-          } else if (existingFile.file_hash !== fileHash) {
-            // File changed
-            await this.updateFile(existingFile.id, fileHash, stats.size, stats.mtime);
-            filesUpdated++;
-            logger.info(`Updated file: ${relativePath}`);
+          if (existingFile) {
+            if (existingFile.file_hash !== fileHash) {
+              // File changed in place
+              await this.updateFile(existingFile.id, fileHash, stats.size, stats.mtime);
+              filesUpdated++;
+              logger.info(`Updated file: ${relativePath}`);
+            }
+            dbFileMap.delete(relativePath);
+            continue;
           }
+
+          // Not found by path. If we already know this exact content by hash,
+          // the file was moved/renamed — update its path instead of creating a
+          // duplicate book (which would also violate the UNIQUE(file_hash)).
+          const movedFile = dbFileByHash.get(fileHash);
+          if (movedFile) {
+            await db.none(
+              `UPDATE book_files
+               SET file_path = $1, file_size = $2, modified_time = $3, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $4`,
+              [relativePath, stats.size, stats.mtime, movedFile.id]
+            );
+            filesUpdated++;
+            logger.info(`Relocated file: ${movedFile.file_path} -> ${relativePath}`);
+            dbFileMap.delete(movedFile.file_path);
+            continue;
+          }
+
+          // Genuinely new file.
+          await this.addNewFile(relativePath, fileHash, stats.size, stats.mtime);
+          filesAdded++;
+          logger.info(`Added new file: ${relativePath}`);
 
           // Remove from map (files left in map will be deleted)
           dbFileMap.delete(relativePath);
@@ -69,6 +91,16 @@ export class LibraryScanner {
         await db.none('DELETE FROM book_files WHERE id = $1', [file.id]);
         filesRemoved++;
         logger.info(`Removed missing file: ${filePath}`);
+      }
+
+      // Clean up books that no longer have any files (orphans left behind by
+      // removals or by older one-book-per-file imports).
+      const orphans = await db.result(
+        `DELETE FROM books b
+         WHERE NOT EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)`
+      );
+      if (orphans.rowCount > 0) {
+        logger.info(`Removed ${orphans.rowCount} orphaned book record(s)`);
       }
 
       // Update scan record
@@ -136,33 +168,58 @@ export class LibraryScanner {
   }
 
   /**
-   * Add a new file to the database
+   * Add a new file to the database. If another format of the same book (same
+   * base filename in the same directory) already exists, the file is attached
+   * to that book rather than creating a duplicate. The book + file are written
+   * in a single transaction so a failure can't leave an orphaned book row.
    */
   private async addNewFile(
-    fullPath: string,
     relativePath: string,
     fileHash: string,
     fileSize: number,
     modifiedTime: Date
   ): Promise<void> {
-    const format = path.extname(fullPath).substring(1).toUpperCase() as 'EPUB' | 'PDF';
+    const ext = path.extname(relativePath);
+    const format = ext.substring(1).toUpperCase() as 'EPUB' | 'PDF';
+    const baseName = path.basename(relativePath, ext);
 
-    // Create a new book entry
-    const book = await db.one(
-      `INSERT INTO books (title, sort_title)
-       VALUES ($1, $2)
-       RETURNING id`,
-      [path.basename(fullPath, path.extname(fullPath)), path.basename(fullPath, path.extname(fullPath))]
+    // Look for a sibling file (other format) of the same book: same directory,
+    // same base name, different extension.
+    const dir = path.dirname(relativePath);
+    const siblingPrefix = path.join(dir, baseName);
+    const sibling = await db.oneOrNone<{ book_id: string }>(
+      `SELECT book_id FROM book_files
+       WHERE file_path = $1 OR file_path = $2
+       LIMIT 1`,
+      [`${siblingPrefix}.epub`, `${siblingPrefix}.pdf`]
     );
 
-    // Create book file entry
-    await db.none(
-      `INSERT INTO book_files (book_id, file_path, format, file_size, file_hash, modified_time)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [book.id, relativePath, format, fileSize, fileHash, modifiedTime]
-    );
+    if (sibling) {
+      await db.none(
+        `INSERT INTO book_files (book_id, file_path, format, file_size, file_hash, modified_time)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [sibling.book_id, relativePath, format, fileSize, fileHash, modifiedTime]
+      );
+      logger.info(`Attached ${format} to existing book ${sibling.book_id}: ${relativePath}`);
+      return;
+    }
 
-    logger.info(`Created new book: ${book.id} for file: ${relativePath}`);
+    await db.tx(async (t) => {
+      const book = await t.one(
+        `INSERT INTO books (title, sort_title)
+         VALUES ($1, $2)
+         RETURNING id`,
+        [baseName, baseName]
+      );
+
+      await t.none(
+        `INSERT INTO book_files (book_id, file_path, format, file_size, file_hash, modified_time)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [book.id, relativePath, format, fileSize, fileHash, modifiedTime]
+      );
+
+      logger.info(`Created new book: ${book.id} for file: ${relativePath}`);
+    });
   }
 
   /**

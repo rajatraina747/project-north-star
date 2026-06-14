@@ -52,6 +52,26 @@ export const books = {
     `/api/books/${id}/cover?thumbnail=${thumbnail}`,
   getFile: (bookId: string, fileId: string) => `/api/books/${bookId}/file/${fileId}`,
   update: (id: string, data: Partial<Book>) => api.patch(`/books/${id}`, data),
+  // The file endpoint requires the JWT in an Authorization header, which a
+  // plain <a download> can't send. Fetch the file as a blob and save it.
+  download: async (bookId: string, fileId: string, filename: string) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`/api/books/${bookId}/file/${fileId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`);
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  },
 };
 
 export const progress = {
@@ -62,9 +82,23 @@ export const progress = {
   getAll: () => api.get<ReadingProgress[]>('/progress'),
 };
 
+export interface SearchParams {
+  query?: string;
+  filters?: {
+    authors?: string[];
+    series?: string[];
+    tags?: string[];
+    formats?: ('EPUB' | 'PDF')[];
+    language?: string;
+  };
+  sort?: 'title' | 'author' | 'recent' | 'added';
+  limit?: number;
+  offset?: number;
+}
+
 export const search = {
-  search: (query: string, filters?: any) =>
-    api.post<{ books: Book[]; total: number }>('/search', { query, filters }),
+  search: (params: SearchParams) =>
+    api.post<{ books: Book[]; total: number }>('/search', { query: '', ...params }),
   quick: (q: string) => api.get<Book[]>('/search/quick', { params: { q } }),
 };
 

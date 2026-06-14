@@ -115,10 +115,10 @@ export class MetadataEnricher {
       if (metadata.isbn) {
         url = `https://openlibrary.org/api/books?bibkeys=ISBN:${metadata.isbn}&format=json&jscmd=data`;
       } else if (metadata.title) {
-        // Search by title
-        const searchUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(metadata.title)}`;
+        // Search by title (and author when available)
+        let searchUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(metadata.title)}`;
         if (metadata.authors && metadata.authors.length > 0) {
-          searchUrl + `&author=${encodeURIComponent(metadata.authors[0])}`;
+          searchUrl += `&author=${encodeURIComponent(metadata.authors[0])}`;
         }
 
         const searchResponse = await axios.get(searchUrl, { timeout: 10000 });

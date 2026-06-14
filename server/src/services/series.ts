@@ -146,9 +146,9 @@ export async function buildSeriesContext(
     return null;
   }
 
-  if (!isSeriesFresh(seriesRecord)) {
-    await refreshSeriesFromProviders(book, seriesRecord);
-  }
+  // NOTE: provider refresh used to happen here, which made book-detail requests
+  // block on (and fail with) external API calls. Refresh is now done by the
+  // worker (see refreshStaleSeries) so this path is read-only and fast.
 
   const [entries, matches, libraryBooks, authorRows] = await Promise.all([
     getSeriesEntries(identity.series_id),
@@ -467,6 +467,58 @@ async function refreshSeriesFromProviders(book: Book, seriesRecord: Series): Pro
     source: providerResult.provider,
     entries: providerResult.entries.length,
   });
+}
+
+/**
+ * Refresh all series whose cache has gone stale. Intended to be run by the
+ * worker (off the request path). For each stale series it picks a representative
+ * book that carries an ISBN and refreshes the catalog from the provider.
+ */
+export async function refreshStaleSeries(limit = 25): Promise<{ refreshed: number }> {
+  if (config.seriesProvider === 'internal') {
+    return { refreshed: 0 };
+  }
+
+  const staleSeries = await db.manyOrNone<Series>(
+    `SELECT * FROM series
+     WHERE last_fetched_at IS NULL
+        OR last_fetched_at < NOW() - (COALESCE(ttl_days, $1) || ' days')::interval
+     ORDER BY last_fetched_at ASC NULLS FIRST
+     LIMIT $2`,
+    [config.seriesCacheTtlDays, limit]
+  );
+
+  let refreshed = 0;
+  for (const seriesRecord of staleSeries || []) {
+    // Find a book in this series that has an ISBN to seed the provider lookup.
+    const seedBook = await db.oneOrNone<Book>(
+      `SELECT * FROM books
+       WHERE series_id = $1
+         AND (isbn_13 IS NOT NULL OR isbn_10 IS NOT NULL)
+       ORDER BY series_index ASC NULLS LAST
+       LIMIT 1`,
+      [seriesRecord.id]
+    );
+
+    if (!seedBook) {
+      // Touch last_fetched_at so we don't re-scan a seedless series every cycle.
+      await db.none('UPDATE series SET last_fetched_at = CURRENT_TIMESTAMP WHERE id = $1', [seriesRecord.id]);
+      continue;
+    }
+
+    try {
+      await refreshSeriesFromProviders(seedBook, seriesRecord);
+      refreshed++;
+    } catch (error) {
+      logger.warn(`${SERIES_LOG}:stale_refresh_failed`, { series_id: seriesRecord.id, error });
+    }
+  }
+
+  if (refreshed > 0) {
+    logger.info(`${SERIES_LOG}:stale_refresh`, { refreshed });
+  }
+
+  return { refreshed };
 }
 
 export async function refreshSeriesFromLibrary(bookId: string): Promise<{ series_id: string; entries: number }> {

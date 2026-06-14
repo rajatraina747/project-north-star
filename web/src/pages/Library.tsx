@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { books as booksApi, search as searchApi, library } from '../lib/api';
+import { search as searchApi, library } from '../lib/api';
+import type { SearchParams } from '../lib/api';
 import BookCard from '../components/BookCard';
 import BookListItem from '../components/BookListItem';
 
@@ -9,7 +10,7 @@ export default function Library() {
   const [searchParams] = useSearchParams();
   const queryParam = searchParams.get('query') || '';
   const [searchQuery, setSearchQuery] = useState(queryParam);
-  const [sortBy, setSortBy] = useState('title');
+  const [sortBy, setSortBy] = useState<NonNullable<SearchParams['sort']>>('title');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     const saved = localStorage.getItem('library-view');
     return saved === 'list' ? 'list' : 'grid';
@@ -24,22 +25,19 @@ export default function Library() {
   const { data, isLoading } = useQuery({
     queryKey: ['books', searchQuery, sortBy, selectedAuthor],
     queryFn: async () => {
-      if (searchQuery) {
-        const response = await searchApi.quick(searchQuery);
-        return { books: response.data, total: response.data.length };
-      }
-      const response = await booksApi.getAll({ limit: 100, offset: 0 });
+      const response = await searchApi.search({
+        query: searchQuery || '',
+        filters: selectedAuthor ? { authors: [selectedAuthor] } : undefined,
+        sort: sortBy,
+        limit: 100,
+        offset: 0,
+      });
       return response.data;
     },
   });
 
-  const books = (data?.books || []).filter(() => {
-    if (!selectedAuthor) return true;
-    // This will be filtered on backend ideally, but for now filter client-side
-    return true; // Backend doesn't support author filter yet
-  });
-
-  const total = books.length;
+  const books = data?.books || [];
+  const total = data?.total ?? books.length;
   const authors = authorsData?.data || [];
 
   useEffect(() => {
@@ -98,12 +96,12 @@ export default function Library() {
 
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
+                onChange={(e) => setSortBy(e.target.value as NonNullable<SearchParams['sort']>)}
                 className="px-3 py-1.5 bg-obsidian-900/50 border border-obsidian-700/50 rounded-lg text-sm text-obsidian-300 focus:outline-none focus:ring-1 focus:ring-polaris-600/50 transition-all duration-250 ease-soft"
               >
                 <option value="title">Title</option>
-                <option value="created_at">Recently Added</option>
-                <option value="published_date">Publication Date</option>
+                <option value="author">Author</option>
+                <option value="added">Recently Added</option>
               </select>
 
               {/* View Mode Toggle */}

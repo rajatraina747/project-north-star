@@ -7,6 +7,7 @@ import { LibraryScanner } from './services/scanner';
 import { MetadataExtractor } from './services/metadata-extractor';
 import { MetadataEnricher } from './services/metadata-enricher';
 import { CoverGenerator } from './services/cover-generator';
+import { refreshStaleSeries } from './services/series';
 import { ScanHistory } from './types';
 
 class WorkerService {
@@ -117,6 +118,13 @@ class WorkerService {
 
       // Process metadata for books that need it (new books or books without metadata/covers)
       await this.processNewBooks();
+
+      // Refresh any stale series catalogs (off the request path).
+      try {
+        await refreshStaleSeries();
+      } catch (error) {
+        logger.error('Stale series refresh failed:', error);
+      }
     } catch (error) {
       logger.error(`Scan ${scanId} failed:`, error);
     } finally {
@@ -129,31 +137,48 @@ class WorkerService {
    */
   private async processNewBooks(): Promise<void> {
     try {
-      // Get books without enriched metadata
-      const booksToProcess = await db.manyOrNone<{ id: string; book_id: string; file_path: string; format: 'EPUB' | 'PDF' }>(
-        `SELECT bf.id, bf.book_id, bf.file_path, bf.format
-         FROM book_files bf
-         INNER JOIN books b ON bf.book_id = b.id
-         WHERE NOT EXISTS (
-           SELECT 1 FROM metadata_sources ms
-           WHERE ms.book_id = b.id
-           AND ms.source_type IN ('GOOGLE_BOOKS', 'OPEN_LIBRARY')
-         )
-         AND b.created_at > NOW() - INTERVAL '1 day'
-         LIMIT ${config.maxConcurrentScans}`
-      );
+      // Drain the backlog of unprocessed books in batches. A book is considered
+      // "processed" once it has any metadata_sources row (processBookMetadata
+      // always writes an EMBEDDED source first), which prevents the same books
+      // from being re-enriched — and re-hitting external APIs — on every scan.
+      const batchSize = Math.max(1, config.maxConcurrentScans);
 
-      if (!booksToProcess || booksToProcess.length === 0) {
-        return;
-      }
+      // Safety bound so a persistent failure can't loop forever.
+      const maxBatches = 1000;
 
-      logger.info(`Processing metadata for ${booksToProcess.length} books`);
+      for (let batch = 0; batch < maxBatches; batch++) {
+        const booksToProcess = await db.manyOrNone<{ id: string; book_id: string; file_path: string; format: 'EPUB' | 'PDF' }>(
+          `SELECT DISTINCT ON (bf.book_id) bf.id, bf.book_id, bf.file_path, bf.format
+           FROM book_files bf
+           INNER JOIN books b ON bf.book_id = b.id
+           WHERE NOT EXISTS (
+             SELECT 1 FROM metadata_sources ms
+             WHERE ms.book_id = b.id
+           )
+           ORDER BY bf.book_id, bf.format
+           LIMIT $1`,
+          [batchSize]
+        );
 
-      for (const file of booksToProcess) {
-        try {
-          await this.processBookMetadata(file.book_id, file.file_path, file.format);
-        } catch (error) {
-          logger.error(`Error processing metadata for book ${file.book_id}:`, error);
+        if (!booksToProcess || booksToProcess.length === 0) {
+          return;
+        }
+
+        logger.info(`Processing metadata for ${booksToProcess.length} books`);
+
+        for (const file of booksToProcess) {
+          try {
+            await this.processBookMetadata(file.book_id, file.file_path, file.format);
+          } catch (error) {
+            logger.error(`Error processing metadata for book ${file.book_id}:`, error);
+            // Record a marker so a permanently failing book doesn't wedge the
+            // batch loop (it would otherwise be selected again every iteration).
+            await db.none(
+              `INSERT INTO metadata_sources (book_id, source_type, confidence_score, metadata)
+               VALUES ($1, 'EMBEDDED', 0, $2)`,
+              [file.book_id, JSON.stringify({ error: 'metadata extraction failed' })]
+            ).catch(() => undefined);
+          }
         }
       }
     } catch (error) {
