@@ -72,6 +72,11 @@ export default function BookCard({ book, progress, showProgress = false }: BookC
         <h3 className="text-sm font-medium text-white line-clamp-2 group-hover:text-polaris-400 transition-colors duration-250 ease-soft">
           {book.title}
         </h3>
+        {book.authors && book.authors.length > 0 && (
+          <p className="text-xs text-obsidian-400 line-clamp-1 mt-0.5">
+            {book.authors.map((a) => a.name).join(', ')}
+          </p>
+        )}
         {book.subtitle && (
           <p className="text-xs text-obsidian-500 line-clamp-1 mt-0.5">{book.subtitle}</p>
         )}

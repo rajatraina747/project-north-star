@@ -21,11 +21,9 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       hasHydrated: false,
       login: (token, user) => {
-        localStorage.setItem('token', token);
         set({ token, user, isAuthenticated: true });
       },
       logout: () => {
-        localStorage.removeItem('token');
         set({ token: null, user: null, isAuthenticated: false });
       },
       setUser: (user) => set({ user }),
@@ -42,3 +40,10 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+/**
+ * Single source of truth for the auth token (persisted by the zustand store
+ * under "auth-storage"). Use this from non-React code (axios interceptors,
+ * fetch calls) instead of reading a separate localStorage key.
+ */
+export const getToken = (): string | null => useAuthStore.getState().token;

@@ -4,16 +4,18 @@ A self-hosted book library server similar to Plex, for managing and reading EPUB
 
 ## Current Status
 
-✅ **Production Ready - Fully Functional Book Server**
+**Functional self-hosted book server** — actively developed. Core flows (scan,
+metadata, reading, progress sync) work end to end. See [Known Limitations](#known-limitations)
+before deploying to anything you'd call production.
 
-**Backend (100% Complete)**
+**Backend**
 - PostgreSQL database with full schema
 - REST API server with JWT authentication
 - Worker service for scanning and metadata extraction
 - Automatic metadata enrichment from file contents
 - Reading progress tracking (EPUB & PDF)
 
-**Frontend (100% Complete)**
+**Frontend**
 - Login and authentication flow
 - Home page with Continue Reading & Recently Added
 - Library view with search, filters, and sorting
@@ -135,27 +137,38 @@ curl http://localhost:3000/api/library/stats \
 - `GET /api/auth/me` - Get current user
 
 ### Books
-- `GET /api/books` - List books (with search, filter, pagination)
+- `GET /api/books` - List books (pagination, sort)
+- `GET /api/books/recent` - Recently added books
+- `GET /api/books/continue` - Continue reading (books with progress)
 - `GET /api/books/:id` - Get book details
-- `PUT /api/books/:id` - Update book metadata
+- `PATCH /api/books/:id` - Update book metadata
 - `DELETE /api/books/:id` - Delete book
-- `GET /api/books/:id/download` - Download book file
-- `GET /api/books/:id/cover` - Get book cover image
+- `GET /api/books/:id/cover` - Get book cover image (`?thumbnail=true` for thumb)
+- `GET /api/books/:id/file/:fileId` - Stream/download the book file
+
+### Search
+- `POST /api/search` - Full-text search with filters and sort
+- `GET /api/search/quick` - Title autocomplete
 
 ### Library
 - `GET /api/library/stats` - Library statistics
-- `GET /api/authors` - List authors
-- `GET /api/series` - List series
-- `GET /api/recent` - Recently added books
+- `GET /api/library/authors` - List authors
+- `GET /api/library/authors/:id` - Author with books
+- `GET /api/library/series` - List series
+- `GET /api/library/series/:id` - Series with books
+- `GET /api/library/tags` - List tags
 
 ### Admin
 - `POST /api/admin/scan` - Trigger library scan
 - `GET /api/admin/scans` - View scan history
-- `GET /api/admin/users` - Manage users
+- `GET /api/admin/scans/:id` - Single scan status
+- `GET /api/admin/settings` / `PUT /api/admin/settings/:key` - App settings
+- `GET /api/admin/health` - System health
 
 ### Reading Progress
-- `GET /api/progress/:bookId` - Get reading progress
-- `PUT /api/progress/:bookId` - Update reading progress
+- `GET /api/progress` - All progress for the current user
+- `GET /api/progress/:bookId/:fileId` - Get reading progress for a file
+- `PUT /api/progress/:bookId/:fileId` - Update reading progress
 
 ## Project Structure
 
@@ -253,6 +266,20 @@ docker-compose exec api npm run migrate
 - TypeScript
 - TailwindCSS
 - React Router
+
+## Known Limitations
+
+- **PDF cover extraction is not implemented.** PDFs only get a cover when one is
+  found via external metadata (Google Books / Open Library). Rendering the first
+  PDF page to an image would require a native renderer
+  (`pdf-to-image`/ImageMagick), which is intentionally not bundled yet. EPUB
+  covers (embedded) work out of the box.
+- **Readers download the whole file before rendering.** The EPUB/PDF readers
+  fetch the entire file (with the auth header) into memory rather than streaming
+  byte ranges. This is simple and reliable but uses more memory for very large
+  PDFs. The file endpoint itself does advertise `Accept-Ranges`.
+- **Single migration script, no version history.** `schema.sql` is idempotent
+  and safe to re-run, but there is no incremental migration tooling yet.
 
 ## License
 

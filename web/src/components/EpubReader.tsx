@@ -10,6 +10,7 @@ import {
   type ReaderFormat,
 } from '../lib/readerProgress';
 import ReaderShell from './ReaderShell';
+import { getToken } from '../lib/auth';
 
 interface EpubReaderProps {
   bookId: string;
@@ -41,7 +42,7 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
 
     const loadBook = async () => {
       try {
-        const token = localStorage.getItem('token');
+        const token = getToken();
         const response = await fetch(fileUrl, {
           headers: {
             'Authorization': `Bearer ${token}`,

@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install dependencies first (better layer caching)
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 # Copy source and build
 COPY . .
@@ -17,13 +17,13 @@ WORKDIR /app
 
 # Install production dependencies only
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 # Copy built application
 COPY --from=builder /app/dist ./dist
 
 # Create data directories
-RUN mkdir -p /data/covers /data/thumbnails /data/config
+RUN mkdir -p /data/covers /data/thumbnails /data/config /data/logs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

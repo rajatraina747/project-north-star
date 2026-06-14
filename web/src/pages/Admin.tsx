@@ -213,7 +213,7 @@ function StatCard({
 function StatusBadge({ status }: { status: string }) {
   const colors = {
     COMPLETED: 'bg-green-500/20 text-green-400 border-green-500/30',
-    IN_PROGRESS: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    RUNNING: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
     FAILED: 'bg-red-500/20 text-red-400 border-red-500/30',
   };
 

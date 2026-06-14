@@ -42,7 +42,7 @@ router.post('/login', async (req, res) => {
         is_admin: user.is_admin,
       },
       config.jwtSecret,
-      { expiresIn: config.jwtExpiresIn as string }
+      { expiresIn: config.jwtExpiresIn } as jwt.SignOptions
     );
 
     const response: LoginResponse = {
@@ -112,7 +112,7 @@ router.post('/register', async (req, res) => {
         is_admin: user.is_admin,
       },
       config.jwtSecret,
-      { expiresIn: config.jwtExpiresIn as string }
+      { expiresIn: config.jwtExpiresIn } as jwt.SignOptions
     );
 
     res.json({

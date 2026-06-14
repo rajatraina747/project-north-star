@@ -3,6 +3,7 @@ import db from '../db';
 import { logger } from '../utils/logger';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { SearchRequest, SearchResponse, Book } from '../types';
+import { attachListDetails } from './books';
 
 const router = Router();
 
@@ -113,7 +114,7 @@ router.post('/', async (req: AuthRequest, res) => {
     );
 
     const response: SearchResponse = {
-      books: (books || []) as any,
+      books: (await attachListDetails(books || [])) as any,
       total: parseInt(totalResult.count.toString()),
       limit,
       offset,

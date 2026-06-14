@@ -39,6 +39,7 @@ services:
       - covers_data:/data/covers
       - thumbnails_data:/data/thumbnails
       - config_data:/data/config
+      - logs_data:/data/logs
     ports:
       - "${API_PORT:-3000}:3000"
     networks:
@@ -71,6 +72,7 @@ services:
       - covers_data:/data/covers
       - thumbnails_data:/data/thumbnails
       - config_data:/data/config
+      - logs_data:/data/logs
     networks:
       - northstar-network
     depends_on:
@@ -83,8 +85,9 @@ services:
       dockerfile: Dockerfile
     container_name: northstar-web
     restart: unless-stopped
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    # Note: the web app talks to the API via the relative path /api, which nginx
+    # proxies to the api service (see web/nginx.conf). There is no runtime API
+    # URL to configure here — VITE_* vars are build-time only.
     ports:
       - "${WEB_PORT:-8080}:80"
     networks:
@@ -97,6 +100,7 @@ volumes:
   covers_data:
   thumbnails_data:
   config_data:
+  logs_data:
 
 networks:
   northstar-network:

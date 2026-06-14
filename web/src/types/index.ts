@@ -30,6 +30,7 @@ export interface Book {
   created_at: string;
   updated_at: string;
   files?: BookFile[];
+  authors?: Author[];
 }
 
 export interface BookWithDetails extends Book {

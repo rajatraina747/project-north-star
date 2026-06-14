@@ -133,21 +133,38 @@ export class MetadataExtractor {
    * Extract basic metadata from filename
    */
   private extractFromFilename(filePath: string): ExtractedMetadata {
-    const basename = path.basename(filePath, path.extname(filePath));
+    const basename = path.basename(filePath, path.extname(filePath)).trim();
 
-    // Try to parse "Author - Title" format
-    const parts = basename.split(' - ');
+    let working = basename;
+    let author: string | undefined;
 
-    if (parts.length >= 2) {
-      return {
-        authors: [parts[0].trim()],
-        title: parts.slice(1).join(' - ').trim(),
-      };
+    // A trailing "(Author)" is a very common convention, e.g.
+    // "Series - Title (Rick Riordan)".
+    const paren = working.match(/^(.*?)\s*\(([^()]+)\)\s*$/);
+    if (paren) {
+      working = paren[1].trim();
+      author = paren[2].trim();
     }
 
-    return {
-      title: basename,
-    };
+    let title = working;
+    if (working.includes(' - ')) {
+      const parts = working.split(' - ').map((p) => p.trim()).filter(Boolean);
+      if (author) {
+        // Author already known from parentheses: the last segment (after any
+        // "Series - ") is the actual book title.
+        title = parts[parts.length - 1];
+      } else {
+        // No parenthetical author: assume the classic "Author - Title" form.
+        author = parts[0];
+        title = parts.slice(1).join(' - ');
+      }
+    }
+
+    const result: ExtractedMetadata = { title: title || basename };
+    if (author) {
+      result.authors = [author];
+    }
+    return result;
   }
 
   /**

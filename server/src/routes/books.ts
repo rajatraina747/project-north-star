@@ -10,6 +10,62 @@ import { buildSeriesContext } from '../services/series';
 
 const router = Router();
 
+/**
+ * Safely resolve a DB-provided relative path inside a trusted base directory.
+ * Returns null if the resolved path would escape the base (path traversal).
+ */
+function resolveWithin(baseDir: string, relativePath: string): string | null {
+  const base = path.resolve(baseDir);
+  const resolved = path.resolve(base, relativePath);
+  if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+    return null;
+  }
+  return resolved;
+}
+
+/**
+ * Attach authors and files to a list of books using two batched queries (no
+ * N+1). Lets list views show the author and a format badge.
+ */
+export async function attachListDetails(books: Book[]): Promise<any[]> {
+  if (!books || books.length === 0) return books;
+  const ids = books.map((b) => b.id);
+
+  const authors = await db.manyOrNone<{ book_id: string; id: string; name: string; sort_name: string | null }>(
+    `SELECT ba.book_id, a.id, a.name, a.sort_name
+     FROM book_authors ba
+     INNER JOIN authors a ON a.id = ba.author_id
+     WHERE ba.book_id IN ($1:csv)
+     ORDER BY ba.author_index ASC`,
+    [ids]
+  );
+  const files = await db.manyOrNone<{ book_id: string; id: string; format: string; file_path: string; file_size: string }>(
+    `SELECT id, book_id, format, file_path, file_size
+     FROM book_files
+     WHERE book_id IN ($1:csv)`,
+    [ids]
+  );
+
+  const authorsByBook = new Map<string, any[]>();
+  for (const a of authors) {
+    const list = authorsByBook.get(a.book_id) ?? [];
+    list.push({ id: a.id, name: a.name, sort_name: a.sort_name });
+    authorsByBook.set(a.book_id, list);
+  }
+  const filesByBook = new Map<string, any[]>();
+  for (const f of files) {
+    const list = filesByBook.get(f.book_id) ?? [];
+    list.push(f);
+    filesByBook.set(f.book_id, list);
+  }
+
+  return books.map((b) => ({
+    ...b,
+    authors: authorsByBook.get(b.id) ?? [],
+    files: filesByBook.get(b.id) ?? [],
+  }));
+}
+
 // All routes require authentication
 router.use(authenticateToken);
 
@@ -39,7 +95,7 @@ router.get('/', async (req: AuthRequest, res) => {
     );
 
     res.json({
-      books,
+      books: await attachListDetails(books),
       total: parseInt(total.count.toString()),
       limit,
       offset,
@@ -286,7 +342,11 @@ router.get('/:id/cover', async (req: AuthRequest, res) => {
       return;
     }
 
-    const fullPath = path.join(thumbnail ? config.thumbnailsPath : config.coversPath, imagePath);
+    const fullPath = resolveWithin(thumbnail ? config.thumbnailsPath : config.coversPath, imagePath);
+    if (!fullPath) {
+      res.status(400).json({ error: 'Invalid cover path' });
+      return;
+    }
 
     try {
       await fs.access(fullPath);
@@ -315,7 +375,11 @@ router.get('/:id/file/:fileId', async (req: AuthRequest, res) => {
       return;
     }
 
-    const fullPath = path.join(config.booksPath, file.file_path);
+    const fullPath = resolveWithin(config.booksPath, file.file_path);
+    if (!fullPath) {
+      res.status(400).json({ error: 'Invalid file path' });
+      return;
+    }
 
     try {
       await fs.access(fullPath);

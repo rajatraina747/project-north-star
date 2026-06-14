@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getToken } from '../lib/auth';
 
 /**
  * Hook to load images that require authentication
@@ -17,7 +18,7 @@ export function useAuthenticatedImage(url: string | null): string | null {
 
     const loadImage = async () => {
       try {
-        const token = localStorage.getItem('token');
+        const token = getToken();
         const response = await fetch(url, {
           headers: {
             'Authorization': `Bearer ${token}`

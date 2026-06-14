@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 import { config, validateConfig } from './utils/config';
 import { logger } from './utils/logger';
 import { testConnection } from './db';
@@ -25,16 +26,41 @@ async function startServer() {
 
     const app = express();
 
-    // Security middleware
+    // Security middleware. This server only serves JSON + file downloads (the
+    // SPA/reader HTML is served by nginx), so the default helmet CSP is safe
+    // here. Allow cross-origin resource fetches so the web app can load covers
+    // and book files when served from a different origin/port (e.g. dev).
     app.use(helmet({
-      contentSecurityPolicy: false, // Allow inline scripts for reader
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
     }));
 
-    // CORS
+    // CORS. Avoid the "*" + credentials combination (which browsers reject and
+    // which is overly permissive). When CORS_ORIGIN is set, restrict to it;
+    // otherwise reflect the request origin.
+    const corsOrigin = process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+      : true;
     app.use(cors({
-      origin: process.env.CORS_ORIGIN || '*',
+      origin: corsOrigin,
       credentials: true,
     }));
+
+    // Rate limiting (uses the window/max from config). A stricter limiter
+    // guards the auth endpoints against brute-force/credential stuffing.
+    const generalLimiter = rateLimit({
+      windowMs: config.rateLimitWindowMs,
+      max: config.rateLimitMaxRequests,
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+    const authLimiter = rateLimit({
+      windowMs: config.rateLimitWindowMs,
+      max: 10,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'Too many attempts, please try again later' },
+    });
+    app.use('/api/', generalLimiter);
 
     // Body parsing
     app.use(express.json({ limit: '10mb' }));
@@ -55,7 +81,7 @@ async function startServer() {
     });
 
     // API Routes
-    app.use('/api/auth', authRoutes);
+    app.use('/api/auth', authLimiter, authRoutes);
     app.use('/api/books', booksRoutes);
     app.use('/api/library', libraryRoutes);
     app.use('/api/progress', progressRoutes);

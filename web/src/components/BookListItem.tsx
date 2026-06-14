@@ -21,7 +21,7 @@ export default function BookListItem({ book }: BookListItemProps) {
     >
       <div className="flex items-center p-4 gap-4">
         {/* Cover */}
-        <div className="flex-shrink-0 w-20 h-30 bg-zinc-800 rounded overflow-hidden">
+        <div className="flex-shrink-0 w-20 aspect-[2/3] bg-zinc-800 rounded overflow-hidden">
           {coverUrl ? (
             <img
               src={coverUrl}

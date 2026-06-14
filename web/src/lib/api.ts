@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { Book, BookWithDetails, ReadingProgress, User } from '../types';
+import { getToken, useAuthStore } from './auth';
 
 const api = axios.create({
   baseURL: '/api',
@@ -9,7 +10,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -23,7 +24,7 @@ api.interceptors.response.use(
       const url = error.config?.url || '';
       const isAuthRequest = url.includes('/auth/login') || url.includes('/auth/register');
       if (!isAuthRequest) {
-        localStorage.removeItem('token');
+        useAuthStore.getState().logout();
         window.location.href = '/login';
       }
     }
@@ -55,7 +56,7 @@ export const books = {
   // The file endpoint requires the JWT in an Authorization header, which a
   // plain <a download> can't send. Fetch the file as a blob and save it.
   download: async (bookId: string, fileId: string, filename: string) => {
-    const token = localStorage.getItem('token');
+    const token = getToken();
     const response = await fetch(`/api/books/${bookId}/file/${fileId}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });

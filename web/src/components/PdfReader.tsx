@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
+// Bundle the worker locally (self-hosted) rather than loading it from a CDN, so
+// the reader works offline / on isolated networks and complies with the CSP.
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import { progress as progressApi } from '../lib/api';
+import { getToken } from '../lib/auth';
 import {
   getLocalProgress,
   pickLatestProgress,
@@ -10,7 +14,7 @@ import {
 } from '../lib/readerProgress';
 import ReaderShell from './ReaderShell';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 interface PdfReaderProps {
   bookId: string;
@@ -40,7 +44,7 @@ export default function PdfReader({ bookId, fileId, fileUrl, title }: PdfReaderP
   useEffect(() => {
     const loadPdf = async () => {
       try {
-        const token = localStorage.getItem('token');
+        const token = getToken();
         const response = await fetch(fileUrl, {
           headers: {
             'Authorization': `Bearer ${token}`,

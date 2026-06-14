@@ -1,4 +1,6 @@
 import winston from 'winston';
+import fs from 'fs';
+import path from 'path';
 
 const { combine, timestamp, printf, colorize } = winston.format;
 
@@ -29,15 +31,26 @@ export const logger = winston.createLogger({
 
 // Add file transport in production
 if (process.env.NODE_ENV === 'production') {
-  logger.add(
-    new winston.transports.File({
-      filename: '/data/logs/error.log',
-      level: 'error',
-    })
-  );
-  logger.add(
-    new winston.transports.File({
-      filename: '/data/logs/combined.log',
-    })
-  );
+  const logDir = process.env.LOG_DIR || '/data/logs';
+  try {
+    // winston creates the log files but not the parent directory; ensure it
+    // exists so the File transports don't throw on startup.
+    fs.mkdirSync(logDir, { recursive: true });
+
+    logger.add(
+      new winston.transports.File({
+        filename: path.join(logDir, 'error.log'),
+        level: 'error',
+      })
+    );
+    logger.add(
+      new winston.transports.File({
+        filename: path.join(logDir, 'combined.log'),
+      })
+    );
+  } catch (error) {
+    // Fall back to console-only logging if the directory can't be created.
+    // eslint-disable-next-line no-console
+    console.warn(`Could not initialise file logging in ${logDir}:`, error);
+  }
 }
