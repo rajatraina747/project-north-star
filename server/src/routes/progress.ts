@@ -26,6 +26,8 @@ router.get('/:bookId/:fileId', async (req: AuthRequest, res) => {
         epub_cfi: null,
         pdf_page: null,
         pdf_scroll_position: null,
+        finished: false,
+        finished_at: null,
       });
       return;
     }
@@ -86,6 +88,47 @@ router.put('/:bookId/:fileId', async (req: AuthRequest, res) => {
   } catch (error) {
     logger.error('Update progress error:', error);
     res.status(500).json({ error: 'Failed to update progress' });
+  }
+});
+
+// Mark a book file as finished / unfinished. Finishing sets progress to 100%
+// and stamps finished_at; unfinishing clears the flag (progress is left as-is).
+router.put('/:bookId/:fileId/finish', async (req: AuthRequest, res) => {
+  try {
+    const { bookId, fileId } = req.params;
+    const finished = req.body?.finished !== false; // default true
+
+    const file = await db.oneOrNone(
+      'SELECT id FROM book_files WHERE id = $1 AND book_id = $2',
+      [fileId, bookId]
+    );
+    if (!file) {
+      res.status(404).json({ error: 'Book file not found' });
+      return;
+    }
+
+    const progress = await db.one<ReadingProgress>(
+      `INSERT INTO reading_progress
+         (user_id, book_id, book_file_id, progress_percent, finished, finished_at, last_read_at)
+       VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+       ON CONFLICT (user_id, book_file_id)
+       DO UPDATE SET
+         finished = $5,
+         finished_at = $6,
+         progress_percent = CASE WHEN $5 THEN 100 ELSE reading_progress.progress_percent END,
+         last_read_at = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [req.user!.id, bookId, fileId, finished ? 100 : 0, finished, finished ? new Date() : null]
+    );
+
+    res.json({
+      ...progress,
+      progress_percent: parseFloat(progress.progress_percent as any) || 0,
+    });
+  } catch (error) {
+    logger.error('Mark finished error:', error);
+    res.status(500).json({ error: 'Failed to update finished state' });
   }
 });
 

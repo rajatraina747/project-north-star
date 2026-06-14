@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import { config } from '../utils/config';
 import { logger } from '../utils/logger';
 import db from '../db';
@@ -54,6 +55,66 @@ export async function authenticateToken(
   } catch (error) {
     logger.error('Authentication error:', error);
     res.status(403).json({ error: 'Invalid or expired token' });
+  }
+}
+
+/**
+ * Authenticate OPDS clients. OPDS readers (KOReader, Marvin, Moon+ Reader, …)
+ * send HTTP Basic credentials, so we bridge those to the existing user model by
+ * verifying username/password with bcrypt — the same check as POST /auth/login.
+ * A Bearer token is also accepted so the catalog can be opened in a browser.
+ * On failure we send WWW-Authenticate so clients prompt for credentials.
+ */
+export async function authenticateOpds(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const authHeader = req.headers['authorization'] || '';
+
+  const fail = () => {
+    res.setHeader('WWW-Authenticate', 'Basic realm="North Star OPDS", charset="UTF-8"');
+    res.status(401).json({ error: 'Authentication required' });
+  };
+
+  try {
+    if (authHeader.startsWith('Basic ')) {
+      const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
+      const sep = decoded.indexOf(':');
+      if (sep === -1) {
+        fail();
+        return;
+      }
+      const username = decoded.slice(0, sep);
+      const password = decoded.slice(sep + 1);
+
+      const user = await db.oneOrNone<User>('SELECT * FROM users WHERE username = $1', [username]);
+      if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+        fail();
+        return;
+      }
+      req.user = { id: user.id, username: user.username, is_admin: user.is_admin };
+      next();
+      return;
+    }
+
+    if (authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      const decoded = jwt.verify(token, config.jwtSecret) as { id: string; username: string; is_admin: boolean };
+      const user = await db.oneOrNone<User>('SELECT id, username, is_admin FROM users WHERE id = $1', [decoded.id]);
+      if (!user) {
+        fail();
+        return;
+      }
+      req.user = { id: user.id, username: user.username, is_admin: user.is_admin };
+      next();
+      return;
+    }
+
+    fail();
+  } catch (error) {
+    logger.error('OPDS auth error:', error);
+    fail();
   }
 }
 

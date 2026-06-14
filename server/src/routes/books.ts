@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
+import multer from 'multer';
 import path from 'path';
 import fs from 'fs/promises';
 import db from '../db';
@@ -7,6 +8,8 @@ import { config } from '../utils/config';
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth';
 import { Book, BookWithDetails, Author, Series, Tag, BookFile, UpdateBookRequest } from '../types';
 import { buildSeriesContext } from '../services/series';
+import { MetadataEnricher } from '../services/metadata-enricher';
+import { CoverGenerator } from '../services/cover-generator';
 
 const router = Router();
 
@@ -66,8 +69,109 @@ export async function attachListDetails(books: Book[]): Promise<any[]> {
   }));
 }
 
+// Upload limit (MB). Kept generous for large PDFs; configurable via env.
+const UPLOAD_MAX_MB = parseInt(process.env.UPLOAD_MAX_MB || '200', 10);
+const ALLOWED_UPLOAD_EXTS = ['.epub', '.pdf'];
+
+const uploadHandler = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: UPLOAD_MAX_MB * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_UPLOAD_EXTS.includes(ext)) {
+      cb(new Error('Only .epub and .pdf files are allowed'));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+/**
+ * Turn an arbitrary upload filename into a safe basename: strip any directory
+ * components, allow only a conservative character set, and bound the length.
+ * Combined with resolveWithin this prevents path traversal.
+ */
+function sanitizeBaseName(name: string): string {
+  const base = path.basename(name);
+  const cleaned = base
+    .replace(/[^a-zA-Z0-9-_. ]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .replace(/^[._]+/, '')
+    .trim();
+  return cleaned.slice(0, 180) || 'upload';
+}
+
 // All routes require authentication
 router.use(authenticateToken);
+
+// Upload a book file into the library (admin only — modifies the shared library).
+// Writes the file under a sanitized path inside the read-write books volume,
+// then creates a scan record so the worker imports + enriches it asynchronously
+// (the request does NOT block on a full scan).
+router.post('/upload', requireAdmin, (req: AuthRequest, res) => {
+  uploadHandler.single('file')(req, res, async (err: any) => {
+    if (err) {
+      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      res.status(status).json({ error: err.message || 'Upload failed' });
+      return;
+    }
+    try {
+      const file = (req as any).file as { originalname: string; buffer: Buffer; size: number } | undefined;
+      if (!file) {
+        res.status(400).json({ error: 'No file provided (field name must be "file")' });
+        return;
+      }
+
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (!ALLOWED_UPLOAD_EXTS.includes(ext)) {
+        res.status(415).json({ error: 'Only .epub and .pdf files are allowed' });
+        return;
+      }
+
+      const safeBase = sanitizeBaseName(path.basename(file.originalname, ext));
+
+      // Place uploads in an "uploads/" subfolder; resolveWithin rejects any
+      // path that would escape the books directory.
+      let relativePath = path.join('uploads', `${safeBase}${ext}`);
+      let fullPath = resolveWithin(config.booksPath, relativePath);
+      if (!fullPath) {
+        res.status(400).json({ error: 'Invalid file path' });
+        return;
+      }
+
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+
+      // Avoid clobbering an existing file: append a timestamp on collision.
+      try {
+        await fs.access(fullPath);
+        relativePath = path.join('uploads', `${safeBase}-${Date.now()}${ext}`);
+        fullPath = resolveWithin(config.booksPath, relativePath)!;
+      } catch {
+        // does not exist — good
+      }
+
+      await fs.writeFile(fullPath, file.buffer);
+
+      // Trigger an asynchronous scan (worker picks up RUNNING rows). This reuses
+      // the existing scanner + metadata/cover enrichment pipeline.
+      const scan = await db.one<{ id: string }>(
+        `INSERT INTO scan_history (status, started_at)
+         VALUES ('RUNNING', CURRENT_TIMESTAMP)
+         RETURNING id`
+      );
+
+      logger.info(`Uploaded book file: ${relativePath} (scan ${scan.id})`);
+      res.status(201).json({
+        message: 'Upload successful; importing in the background',
+        path: relativePath,
+        scan_id: scan.id,
+      });
+    } catch (error) {
+      logger.error('Upload error:', error);
+      res.status(500).json({ error: 'Failed to save upload' });
+    }
+  });
+});
 
 // Get all books with pagination
 router.get('/', async (req: AuthRequest, res) => {
@@ -142,7 +246,7 @@ router.get('/continue', async (req: AuthRequest, res) => {
         rp.pdf_scroll_position
        FROM books b
        INNER JOIN reading_progress rp ON b.id = rp.book_id
-       WHERE rp.user_id = $1 AND rp.progress_percent < 100
+       WHERE rp.user_id = $1 AND rp.progress_percent < 100 AND rp.finished = false
        ORDER BY rp.last_read_at DESC
        LIMIT $2`,
       [req.user!.id, limit]
@@ -400,6 +504,141 @@ router.get('/:id/file/:fileId', async (req: AuthRequest, res) => {
     res.status(500).json({ error: 'Failed to get file' });
   }
 });
+
+// Re-fetch metadata from external sources for a single book (admin only)
+router.post('/:id/refresh-metadata', requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    const book = await db.oneOrNone<Book>('SELECT * FROM books WHERE id = $1', [id]);
+    if (!book) {
+      res.status(404).json({ error: 'Book not found' });
+      return;
+    }
+
+    if (book.metadata_locked) {
+      res.status(409).json({ error: 'Metadata is locked for this book' });
+      return;
+    }
+
+    const authors = await db.manyOrNone<Author>(
+      `SELECT a.* FROM authors a
+       INNER JOIN book_authors ba ON a.id = ba.author_id
+       WHERE ba.book_id = $1 ORDER BY ba.author_index`,
+      [id]
+    );
+
+    const enricher = new MetadataEnricher();
+    const enriched = await enricher.enrich({
+      title: book.title,
+      authors: authors.map((a) => a.name),
+      isbn: book.isbn_13 || book.isbn_10 || undefined,
+      description: book.description || undefined,
+      publisher: book.publisher || undefined,
+    });
+
+    const updates: Record<string, any> = {};
+    if (enriched.title && enriched.title !== book.title) {
+      updates.title = enriched.title;
+      updates.sort_title = enriched.title;
+    }
+    if (enriched.description && !book.description) updates.description = enriched.description;
+    if (enriched.publisher && !book.publisher) updates.publisher = enriched.publisher;
+    if (enriched.publishedDate && !book.published_date) updates.published_date = enriched.publishedDate;
+    if (enriched.pageCount && !book.page_count) updates.page_count = enriched.pageCount;
+    if (enriched.language && !book.language) updates.language = enriched.language;
+    if (enriched.isbn && !book.isbn_13 && !book.isbn_10) {
+      if (enriched.isbn.length === 13) updates.isbn_13 = enriched.isbn;
+      else updates.isbn_10 = enriched.isbn;
+    }
+
+    // Handle cover image if provided
+    let coverUpdate: Record<string, string> = {};
+    if (enriched.coverImage || enriched.coverImageBuffer) {
+      const imgBuffer = enriched.coverImageBuffer || enriched.coverImage!;
+      try {
+        const generator = new CoverGenerator();
+        const paths = await generator.generateFromBuffer(imgBuffer, id);
+        coverUpdate = { cover_path: paths.coverPath, thumbnail_path: paths.thumbnailPath };
+      } catch (coverErr) {
+        logger.warn('Cover generation failed during metadata refresh:', coverErr);
+      }
+    }
+
+    const allUpdates = { ...updates, ...coverUpdate };
+    if (Object.keys(allUpdates).length === 0) {
+      res.json({ message: 'No new metadata found', book });
+      return;
+    }
+
+    const fields = Object.keys(allUpdates).map((k, i) => `${k} = $${i + 1}`).join(', ');
+    const values = Object.values(allUpdates);
+    values.push(id);
+
+    const updatedBook = await db.one<Book>(
+      `UPDATE books SET ${fields}, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $${values.length} RETURNING *`,
+      values
+    );
+
+    res.json(updatedBook);
+  } catch (error) {
+    logger.error('Refresh metadata error:', error);
+    res.status(500).json({ error: 'Failed to refresh metadata' });
+  }
+});
+
+// Replace book cover (admin only)
+// Accepts raw image bytes; client must set Content-Type: image/jpeg or image/png
+router.post('/:id/cover', requireAdmin,
+  express.raw({ type: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], limit: '10mb' }),
+  async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const contentType = req.headers['content-type'] || '';
+
+      if (!contentType.startsWith('image/')) {
+        res.status(415).json({ error: 'Content-Type must be an image type (image/jpeg, image/png, etc.)' });
+        return;
+      }
+
+      const imageBuffer = req.body as Buffer;
+      if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+        res.status(400).json({ error: 'Image body is empty or invalid' });
+        return;
+      }
+
+      const book = await db.oneOrNone<Book>(
+        'SELECT id, cover_path, thumbnail_path FROM books WHERE id = $1',
+        [id]
+      );
+      if (!book) {
+        res.status(404).json({ error: 'Book not found' });
+        return;
+      }
+
+      const generator = new CoverGenerator();
+
+      // Delete old cover files if they exist
+      if (book.cover_path || book.thumbnail_path) {
+        await generator.deleteCover(book.cover_path, book.thumbnail_path);
+      }
+
+      const paths = await generator.generateFromBuffer(imageBuffer, id);
+
+      const updatedBook = await db.one<Book>(
+        `UPDATE books SET cover_path = $1, thumbnail_path = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3 RETURNING *`,
+        [paths.coverPath, paths.thumbnailPath, id]
+      );
+
+      res.json(updatedBook);
+    } catch (error) {
+      logger.error('Replace cover error:', error);
+      res.status(500).json({ error: 'Failed to replace cover' });
+    }
+  }
+);
 
 // Delete book (admin only)
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res) => {

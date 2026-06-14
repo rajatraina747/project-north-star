@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Book, BookWithDetails, ReadingProgress, User } from '../types';
+import type { Book, BookWithDetails, ReadingProgress, ReadingStats, User, Bookmark, AuthorWithBooks, SeriesWithBooks, Tag, Author, Series } from '../types';
 import { getToken, useAuthStore } from './auth';
 
 const api = axios.create({
@@ -80,7 +80,17 @@ export const progress = {
     api.get<ReadingProgress>(`/progress/${bookId}/${fileId}`),
   update: (bookId: string, fileId: string, data: Partial<ReadingProgress>) =>
     api.put(`/progress/${bookId}/${fileId}`, data),
+  setFinished: (bookId: string, fileId: string, finished: boolean) =>
+    api.put<ReadingProgress>(`/progress/${bookId}/${fileId}/finish`, { finished }),
   getAll: () => api.get<ReadingProgress[]>('/progress'),
+};
+
+export const stats = {
+  // Fire-and-forget reading heartbeat (kept off the axios instance's error
+  // interceptor concerns — failures here are non-critical).
+  heartbeat: (bookId: string, fileId: string, seconds: number, pages: number) =>
+    api.post('/stats/heartbeat', { book_id: bookId, file_id: fileId, seconds, pages }),
+  summary: () => api.get<ReadingStats>('/stats/summary'),
 };
 
 export interface SearchParams {
@@ -105,9 +115,16 @@ export const search = {
 
 export const library = {
   stats: () => api.get('/library/stats'),
-  authors: () => api.get('/library/authors'),
-  series: () => api.get('/library/series'),
-  tags: () => api.get('/library/tags'),
+  authors: () => api.get<(Author & { book_count: number })[]>('/library/authors'),
+  authorById: (id: string) => api.get<AuthorWithBooks>(`/library/authors/${id}`),
+  series: () => api.get<(Series & { book_count: number })[]>('/library/series'),
+  seriesById: (id: string) => api.get<SeriesWithBooks>(`/library/series/${id}`),
+  tags: () => api.get<(Tag & { book_count: number })[]>('/library/tags'),
+  createTag: (name: string) => api.post<Tag>('/library/tags', { name }),
+  assignTag: (tagId: string, bookId: string) =>
+    api.post(`/library/tags/${tagId}/books/${bookId}`),
+  removeTag: (tagId: string, bookId: string) =>
+    api.delete(`/library/tags/${tagId}/books/${bookId}`),
 };
 
 export const admin = {
@@ -115,6 +132,46 @@ export const admin = {
   getScans: (limit = 20) => api.get('/admin/scans', { params: { limit } }),
   settings: () => api.get('/admin/settings'),
   updateSetting: (key: string, value: any) => api.put(`/admin/settings/${key}`, { value }),
+  uploadBook: (file: File, onProgress?: (percent: number) => void) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post<{ message: string; path: string; scan_id: string }>('/books/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+      },
+    });
+  },
+};
+
+export const bookmarks = {
+  list: (bookId: string, fileId: string) =>
+    api.get<Bookmark[]>(`/bookmarks/${bookId}/${fileId}`),
+  create: (bookId: string, fileId: string, data: { epub_cfi?: string; pdf_page?: number; label?: string }) =>
+    api.post<Bookmark>(`/bookmarks/${bookId}/${fileId}`, data),
+  delete: (bookId: string, fileId: string, bookmarkId: string) =>
+    api.delete(`/bookmarks/${bookId}/${fileId}/${bookmarkId}`),
+};
+
+export const metadata = {
+  refresh: (bookId: string) => api.post<Book>(`/books/${bookId}/refresh-metadata`),
+  replaceCover: async (bookId: string, file: File) => {
+    const token = getToken();
+    const arrayBuffer = await file.arrayBuffer();
+    const response = await fetch(`/api/books/${bookId}/cover`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'image/jpeg',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: arrayBuffer,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(err.error || `Cover upload failed: ${response.status}`);
+    }
+    return response.json() as Promise<Book>;
+  },
 };
 
 export default api;

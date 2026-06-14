@@ -1,16 +1,47 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import ePub from 'epubjs';
 import type { Book, Rendition } from 'epubjs';
-import { progress as progressApi } from '../lib/api';
+import { progress as progressApi, bookmarks as bookmarksApi } from '../lib/api';
 import {
   getLocalProgress,
   pickLatestProgress,
   setLocalProgress,
   type ReaderFormat,
 } from '../lib/readerProgress';
-import ReaderShell from './ReaderShell';
+import ReaderShell, { type TocItem, type BookmarkItem, type ReaderSearchResult } from './ReaderShell';
+import ReaderSettingsPanel from './ReaderSettingsPanel';
+import { useReaderSettings, FONT_STACKS, READER_THEME_COLORS, type ReaderSettings } from '../lib/readerSettings';
+import { useReadingHeartbeat } from '../lib/readingHeartbeat';
 import { getToken } from '../lib/auth';
+
+// Build and apply the live typography/theme overrides to an epub.js rendition.
+// Uses !important so book-supplied CSS doesn't win over the reader's choices.
+function applyEpubTheme(rendition: Rendition, settings: ReaderSettings) {
+  const { bg, fg } = READER_THEME_COLORS[settings.theme];
+  const family = FONT_STACKS[settings.fontFamily];
+  rendition.themes.register('northstar', {
+    html: { background: `${bg} !important` },
+    body: {
+      background: `${bg} !important`,
+      color: `${fg} !important`,
+      'font-family': `${family} !important`,
+      'line-height': `${settings.lineHeight} !important`,
+      'text-align': `${settings.justify ? 'justify' : 'initial'} !important`,
+      'padding-left': `${settings.margin}px !important`,
+      'padding-right': `${settings.margin}px !important`,
+    },
+    'p, li, div, span, a': {
+      'font-family': `${family} !important`,
+      'line-height': `${settings.lineHeight} !important`,
+      color: `${fg} !important`,
+    },
+    p: { 'text-align': `${settings.justify ? 'justify' : 'inherit'} !important` },
+  });
+  rendition.themes.select('northstar');
+  rendition.themes.fontSize(`${settings.fontSize}%`);
+}
 
 interface EpubReaderProps {
   bookId: string;
@@ -21,18 +52,63 @@ interface EpubReaderProps {
 
 export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReaderProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const viewerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<Book | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
-  const tocRef = useRef<Array<{ href: string; label: string; subitems?: any[] }>>([]);
+  const tocRef = useRef<TocItem[]>([]);
+  const [toc, setToc] = useState<TocItem[]>([]);
   const [chapterTitle, setChapterTitle] = useState<string | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
+  const [currentCfi, setCurrentCfi] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [fontSize, setFontSize] = useState(100);
   const [error, setError] = useState<string | null>(null);
   const lastProgressRef = useRef<{ cfi: string; percent: number; chapter?: string | null } | null>(null);
   const locationsReadyRef = useRef(false);
   const locationsPromiseRef = useRef<Promise<void> | null>(null);
+  const lastHighlightRef = useRef<string | null>(null);
+
+  const [settings, updateSettings] = useReaderSettings();
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const recordPageTurn = useReadingHeartbeat(bookId, fileId);
+
+  // Finished state (lightweight query independent of the imperative CFI load).
+  const { data: progressMeta } = useQuery({
+    queryKey: ['progress-meta', bookId, fileId],
+    queryFn: () => progressApi.get(bookId, fileId),
+  });
+  const isFinished = !!progressMeta?.data?.finished;
+  const finishMutation = useMutation({
+    mutationFn: (finished: boolean) => progressApi.setFinished(bookId, fileId, finished),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['progress-meta', bookId, fileId] }),
+  });
+
+  const { bg: stageBg } = READER_THEME_COLORS[settings.theme];
+
+  // Bookmarks
+  const { data: bookmarksData } = useQuery({
+    queryKey: ['bookmarks', bookId, fileId],
+    queryFn: () => bookmarksApi.list(bookId, fileId),
+  });
+  const bookmarks: BookmarkItem[] = (bookmarksData?.data || []).map((bm: any) => ({
+    id: bm.id,
+    label: bm.label,
+    epub_cfi: bm.epub_cfi,
+    pdf_page: bm.pdf_page,
+    created_at: bm.created_at,
+  }));
+
+  const addBookmarkMutation = useMutation({
+    mutationFn: ({ cfi, label }: { cfi: string; label?: string }) =>
+      bookmarksApi.create(bookId, fileId, { epub_cfi: cfi, label: label || chapterTitle || undefined }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bookmarks', bookId, fileId] }),
+  });
+
+  const deleteBookmarkMutation = useMutation({
+    mutationFn: (id: string) => bookmarksApi.delete(bookId, fileId, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bookmarks', bookId, fileId] }),
+  });
 
   useEffect(() => {
     if (!viewerRef.current) return;
@@ -71,7 +147,9 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
         renditionRef.current = rendition;
 
         book.loaded.navigation.then((nav) => {
-          tocRef.current = nav.toc || [];
+          const items = (nav.toc || []) as TocItem[];
+          tocRef.current = items;
+          if (mounted) setToc(items);
         });
 
         // Generate locations after book is ready
@@ -122,6 +200,7 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
 
         rendition.on('relocated', async (location: any) => {
           const cfi = location.start.cfi;
+          if (mounted) setCurrentCfi(cfi);
 
           const computePercent = async () => {
             // Wait for locations to be ready
@@ -156,6 +235,7 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
           lastProgressRef.current = { cfi, percent: roundedPercent, chapter };
           commitLocalProgress(cfi, roundedPercent, chapter);
           saveProgressDebounced(cfi, roundedPercent);
+          recordPageTurn();
         });
 
         const attachIframeHandlers = () => {
@@ -258,14 +338,7 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
           }
         }
 
-        rendition.themes.default({
-          'body': {
-            'background': '#f5f0e6',
-            'color': '#1c1917',
-            'font-family': 'Georgia, ui-serif, serif',
-            'line-height': '1.6',
-          },
-        });
+        applyEpubTheme(rendition, settingsRef.current);
 
         setTimeout(() => {
           if (mounted) {
@@ -340,6 +413,13 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
     };
   }, [bookId, fileId]);
 
+  // Re-apply typography/theme live whenever settings change.
+  useEffect(() => {
+    if (renditionRef.current) {
+      applyEpubTheme(renditionRef.current, settings);
+    }
+  }, [settings]);
+
   const goToPrevPage = () => {
     renditionRef.current?.prev();
   };
@@ -348,10 +428,54 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
     renditionRef.current?.next();
   };
 
-  const changeFontSize = (delta: number) => {
-    const newSize = Math.max(80, Math.min(150, fontSize + delta));
-    setFontSize(newSize);
-    renditionRef.current?.themes.fontSize(`${newSize}%`);
+  // Full-text search across spine items. Returns CFI-located hits with excerpts.
+  const handleSearch = async (query: string): Promise<ReaderSearchResult[]> => {
+    const book = bookRef.current;
+    if (!book) return [];
+    await book.ready;
+    const results: ReaderSearchResult[] = [];
+    const spineItems: any[] = (book.spine as any)?.spineItems || [];
+    for (const item of spineItems) {
+      try {
+        await item.load(book.load.bind(book));
+        const matches: { cfi: string; excerpt: string }[] = item.find(query) || [];
+        const chapter = findChapterTitle(item.href, tocRef.current);
+        for (const m of matches) {
+          results.push({
+            id: m.cfi,
+            location: m.cfi,
+            excerpt: m.excerpt?.trim() || '',
+            label: chapter || undefined,
+          });
+          if (results.length >= 300) break;
+        }
+      } catch {
+        // skip unreadable spine items
+      } finally {
+        try { item.unload(); } catch { /* ignore */ }
+      }
+      if (results.length >= 300) break;
+    }
+    return results;
+  };
+
+  const handleJumpToSearchResult = (result: ReaderSearchResult) => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    const cfi = result.location;
+    rendition.display(cfi).then(() => {
+      // Replace any prior highlight with the new match.
+      if (lastHighlightRef.current) {
+        try { rendition.annotations.remove(lastHighlightRef.current, 'highlight'); } catch { /* ignore */ }
+      }
+      try {
+        rendition.annotations.add(
+          'highlight', cfi, {}, undefined, 'ns-search-hit',
+          { fill: 'rgba(201,101,38,0.4)' }
+        );
+        lastHighlightRef.current = cfi;
+      } catch { /* ignore */ }
+    }).catch(() => undefined);
   };
 
   const goToFirst = () => {
@@ -385,6 +509,25 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
     }
   };
 
+  const handleTocNavigate = (href: string) => {
+    renditionRef.current?.display(href);
+  };
+
+  const handleAddBookmark = () => {
+    if (!currentCfi) return;
+    addBookmarkMutation.mutate({ cfi: currentCfi });
+  };
+
+  const handleJumpToBookmark = (bookmark: BookmarkItem) => {
+    if (bookmark.epub_cfi) {
+      renditionRef.current?.display(bookmark.epub_cfi);
+    }
+  };
+
+  const handleDeleteBookmark = (id: string) => {
+    deleteBookmarkMutation.mutate(id);
+  };
+
   return (
     <ReaderShell
       title={title}
@@ -398,29 +541,18 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
       onFirst={goToFirst}
       onLast={goToLast}
       onProgressSeek={handleSeek}
-      rightActions={(
-        <div className="flex items-center gap-2 bg-parchment-200 rounded-lg p-1">
-          <button
-            onClick={() => changeFontSize(-10)}
-            className="p-2 text-ink-500 hover:text-ink-900"
-            title="Decrease font size"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-            </svg>
-          </button>
-          <span className="text-xs text-ink-500 w-10 text-center">{fontSize}%</span>
-          <button
-            onClick={() => changeFontSize(10)}
-            className="p-2 text-ink-500 hover:text-ink-900"
-            title="Increase font size"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-        </div>
-      )}
+      toc={toc}
+      currentChapter={chapterTitle}
+      onTocNavigate={handleTocNavigate}
+      bookmarks={bookmarks}
+      onAddBookmark={handleAddBookmark}
+      onJumpToBookmark={handleJumpToBookmark}
+      onDeleteBookmark={handleDeleteBookmark}
+      onSearch={handleSearch}
+      onJumpToSearchResult={handleJumpToSearchResult}
+      isFinished={isFinished}
+      onToggleFinished={() => finishMutation.mutate(!isFinished)}
+      rightActions={<ReaderSettingsPanel settings={settings} onChange={updateSettings} />}
     >
       <div className="relative h-full">
         {isLoading && !error && (
@@ -450,7 +582,7 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
           </div>
         )}
 
-        <div className="h-full bg-[#f5f0e6] rounded-2xl shadow-[0_30px_120px_rgba(0,0,0,0.45)] overflow-hidden">
+        <div className="h-full rounded-2xl shadow-[0_30px_120px_rgba(0,0,0,0.45)] overflow-hidden" style={{ backgroundColor: stageBg }}>
           <div ref={viewerRef} className="w-full h-full" style={{ minHeight: '400px' }} />
         </div>
       </div>
@@ -460,7 +592,7 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
 
 function findChapterTitle(
   href: string,
-  toc: Array<{ href: string; label: string; subitems?: any[] }>
+  toc: TocItem[]
 ): string | null {
   const cleanHref = href.split('#')[0];
   for (const item of toc) {

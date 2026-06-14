@@ -35,7 +35,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
     volumes:
-      - ${BOOKS_LIBRARY_PATH:-./books}:/books:ro
+      # Read-write so the UI "Upload" feature can write new book files into the
+      # library. See DEPLOYMENT.md ("Uploads & the books volume") for the
+      # security implication. The worker keeps this mount read-only.
+      - ${BOOKS_LIBRARY_PATH:-./books}:/books
       - covers_data:/data/covers
       - thumbnails_data:/data/thumbnails
       - config_data:/data/config

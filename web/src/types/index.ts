@@ -99,5 +99,42 @@ export interface ReadingProgress {
   epub_cfi: string | null;
   pdf_page: number | null;
   pdf_scroll_position: number | null;
+  finished?: boolean;
+  finished_at?: string | null;
   last_read_at: string;
+}
+
+export interface ReadingStats {
+  total_seconds: number;
+  total_pages: number;
+  books_finished: number;
+  current_streak: number;
+  active_days: number;
+  avg_pages_per_day: number;
+  per_day: { day: string; seconds: number; pages_read: number }[];
+  per_book: { book_id: string; title: string; thumbnail_path: string | null; seconds: number; pages_read: number }[];
+}
+
+export interface Bookmark {
+  id: string;
+  user_id: string;
+  book_id: string;
+  book_file_id: string;
+  epub_cfi: string | null;
+  pdf_page: number | null;
+  label: string | null;
+  created_at: string;
+}
+
+export interface AuthorWithBooks extends Author {
+  books: Book[];
+}
+
+export interface SeriesWithBooks extends Series {
+  books: Book[];
+  book_count?: number;
+}
+
+export interface TagWithCount extends Tag {
+  book_count?: number;
 }

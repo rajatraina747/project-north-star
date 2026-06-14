@@ -169,7 +169,21 @@ export interface ReadingProgress {
   pdf_page: number | null;
   pdf_scroll_position: number | null;
   device_info: string | null;
+  finished: boolean;
+  finished_at: Date | null;
   last_read_at: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ReadingSession {
+  id: string;
+  user_id: string;
+  book_id: string;
+  book_file_id: string;
+  day: string;
+  seconds: number;
+  pages_read: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -254,6 +268,23 @@ export interface UpdateBookRequest {
 
 export interface ScanRequest {
   force?: boolean;
+}
+
+export interface Bookmark {
+  id: string;
+  user_id: string;
+  book_id: string;
+  book_file_id: string;
+  epub_cfi: string | null;
+  pdf_page: number | null;
+  label: string | null;
+  created_at: Date;
+}
+
+export interface CreateBookmarkRequest {
+  epub_cfi?: string;
+  pdf_page?: number;
+  label?: string;
 }
 
 // Metadata enrichment types

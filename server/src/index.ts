@@ -12,6 +12,9 @@ import libraryRoutes from './routes/library';
 import progressRoutes from './routes/progress';
 import searchRoutes from './routes/search';
 import adminRoutes from './routes/admin';
+import bookmarksRoutes from './routes/bookmarks';
+import statsRoutes from './routes/stats';
+import opdsRoutes from './routes/opds';
 
 async function startServer() {
   try {
@@ -92,6 +95,9 @@ async function startServer() {
     app.use('/api/progress', progressRoutes);
     app.use('/api/search', searchRoutes);
     app.use('/api/admin', adminRoutes);
+    app.use('/api/bookmarks', bookmarksRoutes);
+    app.use('/api/stats', statsRoutes);
+    app.use('/api/opds', opdsRoutes);
 
     // Error handler — never expose internal error details to clients in production.
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

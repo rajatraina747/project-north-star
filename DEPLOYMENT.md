@@ -221,6 +221,61 @@ server {
 }
 ```
 
+## Uploads & the books volume
+
+The web UI's **Upload a Book** feature (Admin panel) writes new EPUB/PDF files
+into the library. For this to work the `api` service mounts the books volume
+**read-write** (`docker-compose.yml`):
+
+```yaml
+api:
+  volumes:
+    - ${BOOKS_LIBRARY_PATH:-./books}:/books   # read-write (was :ro)
+```
+
+**Security implication:** the API process can now create/overwrite files under
+`BOOKS_LIBRARY_PATH`. To contain the risk:
+
+- Uploads are **admin-only** (`POST /api/books/upload`, `requireAdmin`).
+- Only `.epub`/`.pdf` extensions are accepted, with a size cap
+  (`UPLOAD_MAX_MB`, default 200 MB).
+- Filenames are sanitized and resolved with the existing `resolveWithin`
+  traversal guard, then written under a dedicated `uploads/` subfolder — a
+  malicious name cannot escape the books directory.
+- The **worker** keeps its books mount **read-only**; only the API writes.
+
+If you do not want uploads enabled, revert the `api` mount to `:ro`; the rest of
+the app is unaffected (the endpoint will simply fail to write).
+
+After a successful upload the API creates a scan record and returns immediately;
+the worker imports the file and extracts metadata/cover asynchronously (the
+request never blocks on a full library scan).
+
+## OPDS catalog (external readers)
+
+An OPDS 1.x (Atom) catalog is served at **`/api/opds`** so external readers
+(KOReader, Marvin, Moon+ Reader, Thorium, etc.) can browse and download books.
+
+- Root catalog: `https://books.example.com/api/opds`
+- Navigation: Recently Added, All Books, By Author, By Series, By Tag
+- Acquisition links point at an authenticated download route with HTTP Range
+  support, so resumable downloads work.
+
+**Authentication bridge:** OPDS clients send HTTP **Basic** credentials. The
+server verifies `username:password` against the existing user table with bcrypt
+(the same check as `/api/auth/login`) and maps the request to that user — no
+separate OPDS account is needed. A Bearer token is also accepted so the catalog
+can be opened in a browser. Always serve OPDS over TLS (see above), since Basic
+auth sends credentials with every request.
+
+Point your reader at the root URL and enter your North Star username/password:
+
+```
+Catalog URL: https://books.example.com/api/opds
+Username:    <your North Star username>
+Password:    <your North Star password>
+```
+
 ## Backup Strategy
 
 ### Database

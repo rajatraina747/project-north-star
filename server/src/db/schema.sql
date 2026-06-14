@@ -144,6 +144,45 @@ CREATE TABLE IF NOT EXISTS reading_progress (
     UNIQUE(user_id, book_file_id)
 );
 
+-- Bookmarks (per-user, per-file reading positions)
+CREATE TABLE IF NOT EXISTS bookmarks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    book_id UUID REFERENCES books(id) ON DELETE CASCADE,
+    book_file_id UUID REFERENCES book_files(id) ON DELETE CASCADE,
+    epub_cfi TEXT,
+    pdf_page INTEGER,
+    label VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user_book ON bookmarks(user_id, book_id);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user_file ON bookmarks(user_id, book_file_id);
+
+-- Wave 2: "mark as finished" flag on reading progress. Added idempotently so
+-- existing deployments pick it up on the next schema run.
+ALTER TABLE reading_progress ADD COLUMN IF NOT EXISTS finished BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE reading_progress ADD COLUMN IF NOT EXISTS finished_at TIMESTAMP WITH TIME ZONE;
+
+-- Wave 2: reading sessions for stats. One row per (user, file, calendar day);
+-- the readers increment seconds/pages via a throttled heartbeat, so writes are
+-- cheap upserts and per-day / streak aggregation is a trivial GROUP BY.
+CREATE TABLE IF NOT EXISTS reading_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    book_id UUID REFERENCES books(id) ON DELETE CASCADE,
+    book_file_id UUID REFERENCES book_files(id) ON DELETE CASCADE,
+    day DATE NOT NULL,
+    seconds INTEGER NOT NULL DEFAULT 0,
+    pages_read INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, book_file_id, day)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reading_sessions_user_day ON reading_sessions(user_id, day);
+CREATE INDEX IF NOT EXISTS idx_reading_sessions_user_book ON reading_sessions(user_id, book_id);
+
 -- Library scan history
 CREATE TABLE IF NOT EXISTS scan_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

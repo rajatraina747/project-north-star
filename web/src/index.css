@@ -3,6 +3,55 @@
 @tailwind utilities;
 
 /*
+ * Self-hosted dyslexia-friendly reading font (OpenDyslexic, SIL OFL).
+ * Bundled under /fonts so it loads under the strict nginx CSP (no external
+ * font-src). Used by the reader's typography panel.
+ */
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/opendyslexic-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/opendyslexic-latin-700-normal.woff2') format('woff2');
+}
+
+/*
+ * pdf.js text layer — transparent selectable text rendered over the canvas so
+ * PDFs support text selection/copy and in-book search highlighting.
+ */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  z-index: 2;
+  text-align: initial;
+}
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer ::selection {
+  background: rgba(0, 110, 199, 0.35);
+}
+.textLayer .ns-search-hit {
+  background: rgba(201, 101, 38, 0.45);
+  border-radius: 2px;
+}
+
+/*
  * Warm Library theme tokens.
  * Colors are stored as space-separated RGB triples so Tailwind can apply
  * opacity (rgb(var(--x) / <alpha>)). The same class names (parchment/ink/ember)
@@ -12,6 +61,7 @@
  *  - ember     = terracotta accent
  */
 :root {
+  color-scheme: light;
   --p-50: 252 249 242;
   --p-100: 246 239 225;
   --p-200: 236 224 202;
@@ -43,6 +93,7 @@
 }
 
 html.dark {
+  color-scheme: dark;
   /* Warm espresso "night reading room": surfaces dark, text warm off-white */
   --p-50: 26 20 16;
   --p-100: 35 27 21;
@@ -100,6 +151,16 @@ body::before {
   background:
     radial-gradient(1200px 600px at 100% -10%, rgb(var(--glow-accent) / 0.06), transparent 60%),
     radial-gradient(900px 500px at -10% 110%, rgb(var(--glow-ink) / 0.05), transparent 60%);
+}
+
+/* Autofill: prevent Chromium from painting white over dark inputs */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px rgb(var(--p-50)) inset;
+  -webkit-text-fill-color: rgb(var(--i-900));
+  caret-color: rgb(var(--i-900));
+  transition: background-color 0s 600000s;
 }
 
 /* Scrollbar styling - warm */

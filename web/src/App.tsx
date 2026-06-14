@@ -7,6 +7,11 @@ import Library from './pages/Library';
 import BookDetail from './pages/BookDetail';
 import Reader from './pages/Reader';
 import Admin from './pages/Admin';
+import Authors from './pages/Authors';
+import AuthorDetail from './pages/AuthorDetail';
+import SeriesList from './pages/SeriesList';
+import SeriesDetail from './pages/SeriesDetail';
+import Stats from './pages/Stats';
 import Nav from './components/Nav';
 
 function App() {
@@ -52,6 +57,11 @@ function App() {
             <Route path="/books/:id" element={<BookDetail />} />
             <Route path="/read/:bookId/:fileId" element={<Reader />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/authors" element={<Authors />} />
+            <Route path="/authors/:id" element={<AuthorDetail />} />
+            <Route path="/series" element={<SeriesList />} />
+            <Route path="/series/:id" element={<SeriesDetail />} />
+            <Route path="/stats" element={<Stats />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

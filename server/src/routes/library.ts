@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import db from '../db';
 import { logger } from '../utils/logger';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth';
 import { Author, Series, Tag } from '../types';
+import { attachListDetails } from './books';
 
 const router = Router();
 
@@ -82,7 +83,7 @@ router.get('/authors/:id', async (req: AuthRequest, res) => {
 
     res.json({
       ...author,
-      books: books || [],
+      books: await attachListDetails(books || []),
     });
   } catch (error) {
     logger.error('Get author error:', error);
@@ -132,7 +133,7 @@ router.get('/series/:id', async (req: AuthRequest, res) => {
 
     res.json({
       ...series,
-      books: books || [],
+      books: await attachListDetails(books || []),
     });
   } catch (error) {
     logger.error('Get series error:', error);
@@ -175,6 +176,77 @@ router.get('/tags/:id/books', async (req: AuthRequest, res) => {
   } catch (error) {
     logger.error('Get books by tag error:', error);
     res.status(500).json({ error: 'Failed to get books' });
+  }
+});
+
+// Create a tag (admin only — tags are shared library metadata)
+router.post('/tags', requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { name } = req.body as { name?: string };
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ error: 'name is required' });
+      return;
+    }
+    const trimmed = name.trim();
+    if (trimmed.length > 255) {
+      res.status(400).json({ error: 'name must be at most 255 characters' });
+      return;
+    }
+
+    const tag = await db.one<Tag>(
+      `INSERT INTO tags (name) VALUES ($1)
+       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+       RETURNING *`,
+      [trimmed]
+    );
+    res.status(201).json(tag);
+  } catch (error) {
+    logger.error('Create tag error:', error);
+    res.status(500).json({ error: 'Failed to create tag' });
+  }
+});
+
+// Assign tag to book (admin only)
+router.post('/tags/:tagId/books/:bookId', requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { tagId, bookId } = req.params;
+
+    const tag = await db.oneOrNone('SELECT id FROM tags WHERE id = $1', [tagId]);
+    if (!tag) {
+      res.status(404).json({ error: 'Tag not found' });
+      return;
+    }
+    const book = await db.oneOrNone('SELECT id FROM books WHERE id = $1', [bookId]);
+    if (!book) {
+      res.status(404).json({ error: 'Book not found' });
+      return;
+    }
+
+    await db.none(
+      `INSERT INTO book_tags (book_id, tag_id) VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [bookId, tagId]
+    );
+    res.json({ message: 'Tag assigned' });
+  } catch (error) {
+    logger.error('Assign tag error:', error);
+    res.status(500).json({ error: 'Failed to assign tag' });
+  }
+});
+
+// Remove tag from book (admin only)
+router.delete('/tags/:tagId/books/:bookId', requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { tagId, bookId } = req.params;
+
+    await db.none(
+      'DELETE FROM book_tags WHERE book_id = $1 AND tag_id = $2',
+      [bookId, tagId]
+    );
+    res.json({ message: 'Tag removed' });
+  } catch (error) {
+    logger.error('Remove tag error:', error);
+    res.status(500).json({ error: 'Failed to remove tag' });
   }
 });
 

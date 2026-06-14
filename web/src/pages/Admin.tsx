@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { ReactNode } from 'react';
+import { useState, useRef } from 'react';
+import type { ReactNode, ChangeEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { admin, library } from '../lib/api';
 
@@ -79,6 +79,15 @@ export default function Admin() {
             icon={<DocumentIcon />}
           />
         </div>
+
+        {/* Upload Section */}
+        <UploadSection
+          onUploaded={() => {
+            queryClient.invalidateQueries({ queryKey: ['scans'] });
+            queryClient.invalidateQueries({ queryKey: ['library-stats'] });
+            queryClient.invalidateQueries({ queryKey: ['books'] });
+          }}
+        />
 
         {/* Library Scan Section */}
         <div className="bg-parchment-100/70 rounded-xl border border-parchment-300 p-6">
@@ -168,6 +177,74 @@ export default function Admin() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function UploadSection({ onUploaded }: { onUploaded: () => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [percent, setPercent] = useState(0);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+    if (ext !== '.epub' && ext !== '.pdf') {
+      setError('Only .epub and .pdf files are supported');
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    setUploading(true);
+    setPercent(0);
+    try {
+      const res = await admin.uploadBook(file, setPercent);
+      setMessage(res.data.message || 'Upload successful');
+      onUploaded();
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="bg-parchment-100/70 rounded-xl border border-parchment-300 p-6">
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h2 className="text-xl font-serif font-semibold text-ink-900 mb-2">Upload a Book</h2>
+          <p className="text-ink-500">
+            Add an EPUB or PDF to your library. Metadata and the cover are extracted automatically.
+          </p>
+        </div>
+        <input ref={fileRef} type="file" accept=".epub,.pdf" className="hidden" onChange={handleChange} />
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center space-x-2 px-6 py-3 bg-ember-500 hover:bg-ember-600 disabled:bg-ember-300 disabled:cursor-not-allowed text-cream font-semibold rounded-lg transition shadow-warm"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          <span>{uploading ? `Uploading… ${percent}%` : 'Choose File'}</span>
+        </button>
+      </div>
+
+      {uploading && (
+        <div className="h-2 w-full bg-parchment-300 rounded-full overflow-hidden mb-3">
+          <div className="h-full bg-ember-500 transition-all" style={{ width: `${percent}%` }} />
+        </div>
+      )}
+      {message && (
+        <div className="p-4 rounded-lg bg-green-600/10 border border-green-600/30 text-green-800">{message}</div>
+      )}
+      {error && (
+        <div className="p-4 rounded-lg bg-red-600/10 border border-red-600/30 text-red-800">{error}</div>
+      )}
     </div>
   );
 }
