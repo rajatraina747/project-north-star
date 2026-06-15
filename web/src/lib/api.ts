@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Book, BookWithDetails, ReadingProgress, ReadingStats, User, Bookmark, AuthorWithBooks, SeriesWithBooks, Tag, Author, Series } from '../types';
+import type { Book, BookWithDetails, ReadingProgress, ReadingStats, User, Bookmark, AuthorWithBooks, SeriesWithBooks, Tag, Author, Series, ShelfStatus, ShelfBook, ScanHistory, BookFormat } from '../types';
 import { getToken, useAuthStore } from './auth';
 
 const api = axios.create({
@@ -36,6 +36,35 @@ export const auth = {
   login: (username: string, password: string) =>
     api.post('/auth/login', { username, password }),
   me: () => api.get<User>('/auth/me'),
+  registrationStatus: () => api.get<{ open: boolean }>('/auth/registration-status'),
+  register: (data: { username: string; email: string; password: string; display_name?: string }) =>
+    api.post('/auth/register', data),
+};
+
+export interface AdminUser extends User {
+  is_active: boolean;
+  disabled_at: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export const users = {
+  list: () => api.get<AdminUser[]>('/users'),
+  create: (data: { username: string; email: string; display_name?: string; is_admin?: boolean; password: string }) =>
+    api.post<AdminUser>('/users', data),
+  update: (id: string, data: { display_name?: string; is_admin?: boolean; is_active?: boolean }) =>
+    api.patch<AdminUser>(`/users/${id}`, data),
+  resetPassword: (id: string, password: string) =>
+    api.post(`/users/${id}/reset-password`, { password }),
+  remove: (id: string) => api.delete(`/users/${id}`),
+};
+
+export const shelf = {
+  list: (status?: ShelfStatus) =>
+    api.get<ShelfBook[]>('/shelf', { params: status ? { status } : undefined }),
+  get: (bookId: string) => api.get<{ status: ShelfStatus | null }>(`/shelf/${bookId}`),
+  set: (bookId: string, status: ShelfStatus) => api.put(`/shelf/${bookId}`, { status }),
+  remove: (bookId: string) => api.delete(`/shelf/${bookId}`),
 };
 
 export interface BookWithProgress {
@@ -99,7 +128,7 @@ export interface SearchParams {
     authors?: string[];
     series?: string[];
     tags?: string[];
-    formats?: ('EPUB' | 'PDF')[];
+    formats?: BookFormat[];
     language?: string;
   };
   sort?: 'title' | 'author' | 'recent' | 'added';
@@ -127,9 +156,83 @@ export const library = {
     api.delete(`/library/tags/${tagId}/books/${bookId}`),
 };
 
+export interface DuplicateBookSummary {
+  id: string;
+  title: string;
+  primary_author: string | null;
+  formats: string[];
+  paths: string[];
+  total_size: number;
+}
+
+export interface DuplicateReport {
+  exactHash: { file_hash: string; files: { book_id: string; title: string; file_path: string; format: string; file_size: number }[] }[];
+  byTitleAuthor: { title: string; author: string | null; books: DuplicateBookSummary[] }[];
+  byIsbn: { isbn: string; books: DuplicateBookSummary[] }[];
+  counts: { exactHash: number; titleAuthor: number; isbn: number };
+}
+
+export interface ScanStreamHandlers {
+  onProgress?: (scan: ScanHistory) => void;
+  onDone?: (scan: ScanHistory) => void;
+  onError?: (err?: unknown) => void;
+}
+
 export const admin = {
   scan: (force = false) => api.post('/admin/scan', { force }),
-  getScans: (limit = 20) => api.get('/admin/scans', { params: { limit } }),
+  getScans: (limit = 20) => api.get<ScanHistory[]>('/admin/scans', { params: { limit } }),
+  getScan: (id: string) => api.get<ScanHistory>(`/admin/scans/${id}`),
+  duplicates: () => api.get<DuplicateReport>('/admin/duplicates'),
+  // Consume the SSE progress stream via fetch() so we can send the JWT in an
+  // Authorization header (EventSource can't set headers). Returns an abort fn.
+  streamScan: (scanId: string, handlers: ScanStreamHandlers): (() => void) => {
+    const token = getToken();
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/scans/${scanId}/stream`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) {
+          handlers.onError?.();
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split('\n\n');
+          buffer = blocks.pop() || '';
+          for (const block of blocks) {
+            let event = 'message';
+            let data = '';
+            for (const line of block.split('\n')) {
+              if (line.startsWith('event:')) event = line.slice(6).trim();
+              else if (line.startsWith('data:')) data += line.slice(5).trim();
+            }
+            if (!data) continue;
+            try {
+              const parsed = JSON.parse(data) as ScanHistory;
+              if (event === 'done') handlers.onDone?.(parsed);
+              else if (event === 'error') handlers.onError?.(parsed);
+              else handlers.onProgress?.(parsed);
+            } catch {
+              /* ignore malformed frame */
+            }
+          }
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) handlers.onError?.(err);
+      }
+    })();
+
+    return () => controller.abort();
+  },
   settings: () => api.get('/admin/settings'),
   updateSetting: (key: string, value: any) => api.put(`/admin/settings/${key}`, { value }),
   uploadBook: (file: File, onProgress?: (percent: number) => void) => {

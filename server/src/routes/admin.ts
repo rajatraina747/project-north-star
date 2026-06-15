@@ -129,6 +129,167 @@ router.get('/scans/:id', async (req: AuthRequest, res) => {
   }
 });
 
+// Stream live scan progress over Server-Sent Events. The worker writes progress
+// to scan_history (separate process), so the API polls that row on a short
+// interval and pushes each snapshot to the client until the scan leaves the
+// RUNNING state. The client keeps a polling fallback for dropped streams.
+router.get('/scans/:id/stream', async (req: AuthRequest, res) => {
+  const { id } = req.params;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  // Disable proxy buffering (nginx) so events are delivered immediately.
+  res.setHeader('X-Accel-Buffering', 'no');
+  (res as any).flushHeaders?.();
+
+  let closed = false;
+  const send = (event: string, data: unknown) => {
+    if (!closed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(pollTimer);
+    clearInterval(heartbeatTimer);
+    clearTimeout(maxLifeTimer);
+    res.end();
+  };
+
+  const tick = async () => {
+    if (closed) return;
+    try {
+      const scan = await db.oneOrNone<ScanHistory>('SELECT * FROM scan_history WHERE id = $1', [id]);
+      if (!scan) {
+        send('error', { error: 'Scan not found' });
+        cleanup();
+        return;
+      }
+      send('progress', scan);
+      if (scan.status !== 'RUNNING') {
+        send('done', scan);
+        cleanup();
+      }
+    } catch (error) {
+      logger.warn('Scan stream tick failed:', error);
+    }
+  };
+
+  const pollTimer = setInterval(tick, 1000);
+  // Comment heartbeat keeps intermediaries from closing an idle connection.
+  const heartbeatTimer = setInterval(() => { if (!closed) res.write(': hb\n\n'); }, 15000);
+  // Safety cap so a wedged scan can't hold the connection forever.
+  const maxLifeTimer = setTimeout(cleanup, 30 * 60 * 1000);
+
+  req.on('close', cleanup);
+  await tick();
+});
+
+// Duplicate-detection report (read-only). Surfaces three kinds of likely
+// duplicates:
+//   1. exactHash    — files with an identical content hash. book_files.file_hash
+//                     is UNIQUE so this is normally empty, but it's kept for
+//                     robustness against legacy data and as a documented check.
+//   2. byTitleAuthor — distinct book records sharing a normalized title + primary
+//                     author (e.g. the same work imported twice / as separate rows).
+//   3. byIsbn        — distinct book records sharing an ISBN-10 or ISBN-13.
+// No destructive actions are exposed — this is report-only by design.
+router.get('/duplicates', async (_req: AuthRequest, res) => {
+  try {
+    // Exact-hash duplicates at the file level.
+    const exactHash = await db.manyOrNone<{ file_hash: string; files: any[] }>(
+      `SELECT bf.file_hash,
+              json_agg(json_build_object(
+                'book_id', bf.book_id, 'title', b.title,
+                'file_path', bf.file_path, 'format', bf.format, 'file_size', bf.file_size
+              )) AS files
+       FROM book_files bf
+       JOIN books b ON b.id = bf.book_id
+       GROUP BY bf.file_hash
+       HAVING COUNT(*) > 1`
+    );
+
+    // One summary row per book, used to group near-duplicates in JS.
+    const books = await db.manyOrNone<{
+      id: string;
+      title: string;
+      isbn_10: string | null;
+      isbn_13: string | null;
+      primary_author: string | null;
+      total_size: string | null;
+      formats: string[] | null;
+      paths: string[] | null;
+    }>(
+      `SELECT b.id, b.title, b.isbn_10, b.isbn_13,
+              (SELECT a.name FROM book_authors ba JOIN authors a ON a.id = ba.author_id
+                 WHERE ba.book_id = b.id ORDER BY ba.author_index LIMIT 1) AS primary_author,
+              (SELECT SUM(file_size) FROM book_files WHERE book_id = b.id) AS total_size,
+              (SELECT array_agg(DISTINCT format) FROM book_files WHERE book_id = b.id) AS formats,
+              (SELECT array_agg(file_path) FROM book_files WHERE book_id = b.id) AS paths
+       FROM books b`
+    );
+
+    const summary = (b: typeof books[number]) => ({
+      id: b.id,
+      title: b.title,
+      primary_author: b.primary_author,
+      formats: b.formats || [],
+      paths: b.paths || [],
+      total_size: parseInt(b.total_size || '0', 10),
+    });
+
+    const norm = (s: string | null | undefined) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+    // Group by normalized title + primary author.
+    const titleAuthorMap = new Map<string, typeof books>();
+    for (const b of books) {
+      const key = `${norm(b.title)}|${norm(b.primary_author)}`;
+      if (!norm(b.title)) continue;
+      const arr = titleAuthorMap.get(key) || [];
+      arr.push(b);
+      titleAuthorMap.set(key, arr);
+    }
+    const byTitleAuthor = [...titleAuthorMap.values()]
+      .filter((arr) => arr.length > 1)
+      .map((arr) => ({
+        title: arr[0].title,
+        author: arr[0].primary_author,
+        books: arr.map(summary),
+      }));
+
+    // Group by ISBN (10 or 13).
+    const isbnMap = new Map<string, typeof books>();
+    for (const b of books) {
+      for (const isbn of [b.isbn_13, b.isbn_10]) {
+        const v = (isbn || '').replace(/[-\s]/g, '');
+        if (!v) continue;
+        const arr = isbnMap.get(v) || [];
+        // Avoid adding the same book twice for the same ISBN value.
+        if (!arr.some((x) => x.id === b.id)) arr.push(b);
+        isbnMap.set(v, arr);
+      }
+    }
+    const byIsbn = [...isbnMap.entries()]
+      .filter(([, arr]) => arr.length > 1)
+      .map(([isbn, arr]) => ({ isbn, books: arr.map(summary) }));
+
+    res.json({
+      exactHash: exactHash || [],
+      byTitleAuthor,
+      byIsbn,
+      counts: {
+        exactHash: (exactHash || []).length,
+        titleAuthor: byTitleAuthor.length,
+        isbn: byIsbn.length,
+      },
+    });
+  } catch (error) {
+    logger.error('Duplicate report error:', error);
+    res.status(500).json({ error: 'Failed to build duplicate report' });
+  }
+});
+
 // System health check
 router.get('/health', async (req: AuthRequest, res) => {
   try {

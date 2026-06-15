@@ -15,6 +15,8 @@ import adminRoutes from './routes/admin';
 import bookmarksRoutes from './routes/bookmarks';
 import statsRoutes from './routes/stats';
 import opdsRoutes from './routes/opds';
+import usersRoutes from './routes/users';
+import shelfRoutes from './routes/shelf';
 
 async function startServer() {
   try {
@@ -98,6 +100,8 @@ async function startServer() {
     app.use('/api/bookmarks', bookmarksRoutes);
     app.use('/api/stats', statsRoutes);
     app.use('/api/opds', opdsRoutes);
+    app.use('/api/users', usersRoutes);
+    app.use('/api/shelf', shelfRoutes);
 
     // Error handler — never expose internal error details to clients in production.
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

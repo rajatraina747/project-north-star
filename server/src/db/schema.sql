@@ -183,6 +183,36 @@ CREATE TABLE IF NOT EXISTS reading_sessions (
 CREATE INDEX IF NOT EXISTS idx_reading_sessions_user_day ON reading_sessions(user_id, day);
 CREATE INDEX IF NOT EXISTS idx_reading_sessions_user_book ON reading_sessions(user_id, book_id);
 
+-- ===========================================================================
+-- Wave 3: multi-user activation
+-- ===========================================================================
+
+-- Wave 3: allow disabling accounts without deleting them. Login is blocked when
+-- is_active is false. Added idempotently for existing deployments.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMP WITH TIME ZONE;
+
+-- Wave 3: per-user shelves (reading-intent layer, distinct from actual reading
+-- progress). One status per (user, book). FINISHED is kept in sync with the
+-- Wave 2 reading_progress.finished flag at the application layer so there is a
+-- single coherent "finished" state (see routes/shelf.ts and routes/progress.ts).
+CREATE TABLE IF NOT EXISTS user_book_status (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    book_id UUID REFERENCES books(id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('WANT_TO_READ', 'READING', 'FINISHED')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, book_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_book_status_user ON user_book_status(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_user_book_status_book ON user_book_status(book_id);
+
+DROP TRIGGER IF EXISTS update_user_book_status_updated_at ON user_book_status;
+CREATE TRIGGER update_user_book_status_updated_at BEFORE UPDATE ON user_book_status
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Library scan history
 CREATE TABLE IF NOT EXISTS scan_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -195,6 +225,21 @@ CREATE TABLE IF NOT EXISTS scan_history (
     files_removed INTEGER DEFAULT 0,
     error_message TEXT
 );
+
+-- Wave 3: format expansion. Widen the allowed file formats to include comics
+-- (CBZ) and Kindle formats (MOBI, AZW3). Done by dropping and re-adding the
+-- CHECK constraint so it's idempotent across deploys.
+ALTER TABLE book_files DROP CONSTRAINT IF EXISTS book_files_format_check;
+ALTER TABLE book_files ADD CONSTRAINT book_files_format_check
+    CHECK (format IN ('EPUB', 'PDF', 'CBZ', 'MOBI', 'AZW3'));
+
+-- Wave 3: live scan progress. The worker writes these incrementally so the API
+-- can stream progress to the Admin page over SSE (the two run as separate
+-- processes, so the DB is the channel). Added idempotently.
+ALTER TABLE scan_history ADD COLUMN IF NOT EXISTS files_total INTEGER;
+ALTER TABLE scan_history ADD COLUMN IF NOT EXISTS current_phase VARCHAR(50);
+ALTER TABLE scan_history ADD COLUMN IF NOT EXISTS current_file VARCHAR(2000);
+ALTER TABLE scan_history ADD COLUMN IF NOT EXISTS progress_updated_at TIMESTAMP WITH TIME ZONE;
 
 -- Application settings
 CREATE TABLE IF NOT EXISTS settings (

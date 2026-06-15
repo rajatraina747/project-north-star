@@ -3,13 +3,15 @@ import fs from 'fs/promises';
 import EPub from 'epub2';
 import pdfParse from 'pdf-parse';
 import { logger } from '../utils/logger';
-import { ExtractedMetadata } from '../types';
+import { ExtractedMetadata, BookFormat } from '../types';
 
 export class MetadataExtractor {
   /**
-   * Extract metadata from a book file
+   * Extract metadata from a book file. EPUB/PDF have embedded-metadata parsers;
+   * CBZ/MOBI/AZW3 have no reliable server-side parser here, so we fall back to
+   * deriving a title from the filename (enrichment can still match externally).
    */
-  async extract(filePath: string, format: 'EPUB' | 'PDF'): Promise<ExtractedMetadata> {
+  async extract(filePath: string, format: BookFormat): Promise<ExtractedMetadata> {
     try {
       if (format === 'EPUB') {
         return await this.extractEpubMetadata(filePath);
@@ -17,7 +19,7 @@ export class MetadataExtractor {
         return await this.extractPdfMetadata(filePath);
       }
 
-      return {};
+      return this.extractFromFilename(filePath);
     } catch (error) {
       logger.error(`Error extracting metadata from ${filePath}:`, error);
       return this.extractFromFilename(filePath);

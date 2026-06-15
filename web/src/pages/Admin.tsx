@@ -1,11 +1,15 @@
 import { useState, useRef } from 'react';
 import type { ReactNode, ChangeEvent } from 'react';
+import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { admin, library } from '../lib/api';
+import ScanProgress from '../components/ScanProgress';
 
 export default function Admin() {
   const [scanLoading, setScanLoading] = useState(false);
   const [scanMessage, setScanMessage] = useState('');
+  const [activeScanId, setActiveScanId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: stats } = useQuery({
@@ -21,12 +25,19 @@ export default function Admin() {
     },
   });
 
+  // Adopt an already-running scan (e.g. started elsewhere or page reloaded) so
+  // its live progress shows without needing to re-trigger.
+  useEffect(() => {
+    if (activeScanId || !scans) return;
+    const running = scans.find((s) => s.status === 'RUNNING');
+    if (running) setActiveScanId(running.id);
+  }, [scans, activeScanId]);
+
   const scanMutation = useMutation({
     mutationFn: () => admin.scan(false),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
+      setActiveScanId(res.data?.scan_id ?? null);
       queryClient.invalidateQueries({ queryKey: ['scans'] });
-      queryClient.invalidateQueries({ queryKey: ['library-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['books'] });
       setScanMessage('Scan started successfully!');
       setTimeout(() => setScanMessage(''), 5000);
     },
@@ -35,6 +46,13 @@ export default function Admin() {
       setTimeout(() => setScanMessage(''), 5000);
     },
   });
+
+  const handleScanComplete = () => {
+    setActiveScanId(null);
+    queryClient.invalidateQueries({ queryKey: ['scans'] });
+    queryClient.invalidateQueries({ queryKey: ['library-stats'] });
+    queryClient.invalidateQueries({ queryKey: ['books'] });
+  };
 
   const handleScan = async () => {
     setScanLoading(true);
@@ -80,6 +98,34 @@ export default function Admin() {
           />
         </div>
 
+        {/* Management shortcuts */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Link
+            to="/admin/users"
+            className="flex items-center justify-between bg-parchment-100/70 rounded-xl border border-parchment-300 p-6 hover:bg-parchment-200/70 transition-colors group"
+          >
+            <div>
+              <h2 className="text-xl font-serif font-semibold text-ink-900 mb-1">User Management</h2>
+              <p className="text-ink-500 text-sm">Create accounts, set roles, disable or remove users</p>
+            </div>
+            <svg className="w-6 h-6 text-ink-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+          <Link
+            to="/admin/duplicates"
+            className="flex items-center justify-between bg-parchment-100/70 rounded-xl border border-parchment-300 p-6 hover:bg-parchment-200/70 transition-colors group"
+          >
+            <div>
+              <h2 className="text-xl font-serif font-semibold text-ink-900 mb-1">Duplicate Report</h2>
+              <p className="text-ink-500 text-sm">Find exact and near-duplicate books and files</p>
+            </div>
+            <svg className="w-6 h-6 text-ink-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        </div>
+
         {/* Upload Section */}
         <UploadSection
           onUploaded={() => {
@@ -100,10 +146,10 @@ export default function Admin() {
             </div>
             <button
               onClick={handleScan}
-              disabled={scanLoading}
+              disabled={scanLoading || !!activeScanId}
               className="flex items-center space-x-2 px-6 py-3 bg-ember-500 hover:bg-ember-600 disabled:bg-ember-300 disabled:cursor-not-allowed text-cream font-semibold rounded-lg transition shadow-warm"
             >
-              {scanLoading ? (
+              {scanLoading || activeScanId ? (
                 <>
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
                   <span>Scanning...</span>
@@ -119,7 +165,13 @@ export default function Admin() {
             </button>
           </div>
 
-          {scanMessage && (
+          {activeScanId && (
+            <div className="mb-4 p-4 rounded-lg bg-parchment-50 border border-parchment-300">
+              <ScanProgress scanId={activeScanId} onComplete={handleScanComplete} />
+            </div>
+          )}
+
+          {scanMessage && !activeScanId && (
             <div className={`p-4 rounded-lg ${
               scanMessage.includes('success')
                 ? 'bg-green-600/10 border border-green-600/30 text-green-800'
@@ -192,8 +244,8 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
-    if (ext !== '.epub' && ext !== '.pdf') {
-      setError('Only .epub and .pdf files are supported');
+    if (!['.epub', '.pdf', '.cbz', '.mobi', '.azw3'].includes(ext)) {
+      setError('Supported formats: EPUB, PDF, CBZ, MOBI, AZW3');
       return;
     }
     setError(null);
@@ -218,10 +270,10 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
         <div>
           <h2 className="text-xl font-serif font-semibold text-ink-900 mb-2">Upload a Book</h2>
           <p className="text-ink-500">
-            Add an EPUB or PDF to your library. Metadata and the cover are extracted automatically.
+            Add an EPUB, PDF, CBZ, MOBI, or AZW3 to your library. Metadata and the cover are extracted automatically.
           </p>
         </div>
-        <input ref={fileRef} type="file" accept=".epub,.pdf" className="hidden" onChange={handleChange} />
+        <input ref={fileRef} type="file" accept=".epub,.pdf,.cbz,.mobi,.azw3" className="hidden" onChange={handleChange} />
         <button
           onClick={() => fileRef.current?.click()}
           disabled={uploading}

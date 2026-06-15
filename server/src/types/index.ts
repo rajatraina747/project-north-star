@@ -5,6 +5,19 @@ export interface User {
   password_hash: string;
   display_name: string | null;
   is_admin: boolean;
+  is_active: boolean;
+  disabled_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export type ShelfStatus = 'WANT_TO_READ' | 'READING' | 'FINISHED';
+
+export interface UserBookStatus {
+  id: string;
+  user_id: string;
+  book_id: string;
+  status: ShelfStatus;
   created_at: Date;
   updated_at: Date;
 }
@@ -123,11 +136,14 @@ export interface SeriesContext {
   items: SeriesContextItem[];
 }
 
+// Readable in-app: EPUB, PDF, CBZ. Listable + downloadable only: MOBI, AZW3.
+export type BookFormat = 'EPUB' | 'PDF' | 'CBZ' | 'MOBI' | 'AZW3';
+
 export interface BookFile {
   id: string;
   book_id: string;
   file_path: string;
-  format: 'EPUB' | 'PDF';
+  format: BookFormat;
   file_size: number;
   file_hash: string;
   modified_time: Date;
@@ -197,6 +213,10 @@ export interface ScanHistory {
   files_added: number;
   files_updated: number;
   files_removed: number;
+  files_total: number | null;
+  current_phase: string | null;
+  current_file: string | null;
+  progress_updated_at: Date | null;
   error_message: string | null;
 }
 
@@ -236,7 +256,7 @@ export interface SearchRequest {
     authors?: string[];
     series?: string[];
     tags?: string[];
-    formats?: ('EPUB' | 'PDF')[];
+    formats?: BookFormat[];
     language?: string;
   };
   sort?: 'title' | 'author' | 'recent' | 'added';

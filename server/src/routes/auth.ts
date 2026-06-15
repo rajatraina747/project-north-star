@@ -35,6 +35,11 @@ router.post('/login', async (req, res) => {
       return;
     }
 
+    if (user.is_active === false) {
+      res.status(403).json({ error: 'Account disabled. Contact an administrator.' });
+      return;
+    }
+
     const token = jwt.sign(
       {
         id: user.id,
@@ -74,6 +79,18 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res) => {
   } catch (error) {
     logger.error('Get user error:', error);
     res.status(500).json({ error: 'Failed to get user' });
+  }
+});
+
+// Registration status — open only when no users exist yet (first-run bootstrap).
+// Lets the login screen show the "create first admin" form instead of a sign-in.
+router.get('/registration-status', async (_req, res) => {
+  try {
+    const userCount = await db.one<{ count: string }>('SELECT COUNT(*) as count FROM users');
+    res.json({ open: parseInt(userCount.count, 10) === 0 });
+  } catch (error) {
+    logger.error('Registration status error:', error);
+    res.status(500).json({ error: 'Failed to get registration status' });
   }
 });
 

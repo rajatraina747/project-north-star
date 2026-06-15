@@ -8,7 +8,7 @@ import { MetadataExtractor } from './services/metadata-extractor';
 import { MetadataEnricher } from './services/metadata-enricher';
 import { CoverGenerator } from './services/cover-generator';
 import { refreshStaleSeries } from './services/series';
-import { ScanHistory } from './types';
+import { ScanHistory, BookFormat } from './types';
 
 class WorkerService {
   private scanner: LibraryScanner;
@@ -151,7 +151,7 @@ class WorkerService {
       const maxBatches = 1000;
 
       for (let batch = 0; batch < maxBatches; batch++) {
-        const booksToProcess = await db.manyOrNone<{ id: string; book_id: string; file_path: string; format: 'EPUB' | 'PDF' }>(
+        const booksToProcess = await db.manyOrNone<{ id: string; book_id: string; file_path: string; format: BookFormat }>(
           `SELECT DISTINCT ON (bf.book_id) bf.id, bf.book_id, bf.file_path, bf.format
            FROM book_files bf
            INNER JOIN books b ON bf.book_id = b.id
@@ -193,7 +193,7 @@ class WorkerService {
   /**
    * Process metadata for a single book
    */
-  private async processBookMetadata(bookId: string, filePath: string, format: 'EPUB' | 'PDF'): Promise<void> {
+  private async processBookMetadata(bookId: string, filePath: string, format: BookFormat): Promise<void> {
     try {
       const fullPath = `${config.booksPath}/${filePath}`;
 

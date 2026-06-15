@@ -7,6 +7,8 @@ import Library from './pages/Library';
 import BookDetail from './pages/BookDetail';
 import Reader from './pages/Reader';
 import Admin from './pages/Admin';
+import Users from './pages/Users';
+import Duplicates from './pages/Duplicates';
 import Authors from './pages/Authors';
 import AuthorDetail from './pages/AuthorDetail';
 import SeriesList from './pages/SeriesList';
@@ -57,6 +59,8 @@ function App() {
             <Route path="/books/:id" element={<BookDetail />} />
             <Route path="/read/:bookId/:fileId" element={<Reader />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/admin/users" element={<Users />} />
+            <Route path="/admin/duplicates" element={<Duplicates />} />
             <Route path="/authors" element={<Authors />} />
             <Route path="/authors/:id" element={<AuthorDetail />} />
             <Route path="/series" element={<SeriesList />} />
