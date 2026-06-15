@@ -4,6 +4,16 @@ export interface User {
   email: string;
   display_name: string | null;
   is_admin: boolean;
+  is_active?: boolean;
+  disabled_at?: string | null;
+  created_at?: string;
+}
+
+export type ShelfStatus = 'WANT_TO_READ' | 'READING' | 'FINISHED';
+
+export interface ShelfBook extends Book {
+  shelf_status: ShelfStatus;
+  shelved_at?: string;
 }
 
 export interface Book {
@@ -80,11 +90,16 @@ export interface Tag {
   name: string;
 }
 
+export type BookFormat = 'EPUB' | 'PDF' | 'CBZ' | 'MOBI' | 'AZW3';
+
+// Formats that have an in-app reader. MOBI/AZW3 are download-only.
+export const READABLE_FORMATS: BookFormat[] = ['EPUB', 'PDF', 'CBZ'];
+
 export interface BookFile {
   id: string;
   book_id: string;
   file_path: string;
-  format: 'EPUB' | 'PDF';
+  format: BookFormat;
   file_size: number;
   file_hash: string;
   modified_time: string;
@@ -102,6 +117,22 @@ export interface ReadingProgress {
   finished?: boolean;
   finished_at?: string | null;
   last_read_at: string;
+}
+
+export interface ScanHistory {
+  id: string;
+  started_at: string;
+  completed_at: string | null;
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED';
+  files_scanned: number;
+  files_added: number;
+  files_updated: number;
+  files_removed: number;
+  files_total: number | null;
+  current_phase: string | null;
+  current_file: string | null;
+  progress_updated_at: string | null;
+  error_message: string | null;
 }
 
 export interface ReadingStats {

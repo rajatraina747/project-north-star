@@ -122,6 +122,16 @@ router.put('/:bookId/:fileId/finish', async (req: AuthRequest, res) => {
       [req.user!.id, bookId, fileId, finished ? 100 : 0, finished, finished ? new Date() : null]
     );
 
+    // Keep the per-user shelf coherent with the finished flag: finishing a file
+    // shelves the book as FINISHED; unfinishing moves it back to READING.
+    await db.none(
+      `INSERT INTO user_book_status (user_id, book_id, status)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, book_id)
+       DO UPDATE SET status = $3, updated_at = CURRENT_TIMESTAMP`,
+      [req.user!.id, bookId, finished ? 'FINISHED' : 'READING']
+    );
+
     res.json({
       ...progress,
       progress_percent: parseFloat(progress.progress_percent as any) || 0,

@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { books as booksApi, library, metadata as metadataApi, progress as progressApi } from '../lib/api';
 import { useAuthenticatedImage } from '../hooks/useAuthenticatedImage';
 import { useAuthStore } from '../lib/auth';
+import ShelfControl from '../components/ShelfControl';
+import { READABLE_FORMATS } from '../types';
 import type { SeriesContextItem, Tag } from '../types';
 
 export default function BookDetail() {
@@ -78,6 +80,7 @@ export default function BookDetail() {
   if (!bookData) return <ErrorState />;
 
   const primaryFile = bookData.files?.[0];
+  const canRead = !!primaryFile && READABLE_FORMATS.includes(primaryFile.format);
   const seriesEnabled = import.meta.env.VITE_SERIES_SECTION !== 'false';
   const seriesContext = bookData.series_context;
   const seriesName = seriesContext?.series_name || bookData.series_name || bookData.series?.name || null;
@@ -293,11 +296,17 @@ export default function BookDetail() {
                 </div>
               </div>
 
+              {/* Shelf */}
+              <div className="mb-6">
+                <p className="text-xs font-semibold text-ink-400 uppercase tracking-wide mb-2">Your shelf</p>
+                <ShelfControl bookId={bookData.id} />
+              </div>
+
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-3 mb-6">
-                {primaryFile && (
+                {canRead && (
                   <Link
-                    to={`/read/${bookData.id}/${primaryFile.id}`}
+                    to={`/read/${bookData.id}/${primaryFile!.id}`}
                     className="inline-flex items-center px-6 py-3 bg-ember-500 hover:bg-ember-600 text-cream font-semibold rounded-lg transition-all duration-350 ease-soft hover:-translate-y-0.5 hover:shadow-warm-lg active:translate-y-0"
                   >
                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -1,17 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { search as searchApi, library } from '../lib/api';
+import { search as searchApi, library, shelf as shelfApi } from '../lib/api';
 import type { SearchParams } from '../lib/api';
+import type { ShelfStatus, BookFormat } from '../types';
 import BookCard from '../components/BookCard';
 import BookListItem from '../components/BookListItem';
 
-const FORMAT_OPTIONS: ('EPUB' | 'PDF')[] = ['EPUB', 'PDF'];
+const FORMAT_OPTIONS: BookFormat[] = ['EPUB', 'PDF', 'CBZ', 'MOBI', 'AZW3'];
+const SHELF_OPTIONS: { value: ShelfStatus; label: string }[] = [
+  { value: 'WANT_TO_READ', label: 'Want to Read' },
+  { value: 'READING', label: 'Reading' },
+  { value: 'FINISHED', label: 'Finished' },
+];
 
 export default function Library() {
   const [searchParams] = useSearchParams();
   const queryParam = searchParams.get('query') || '';
   const tagParam = searchParams.get('tag') || '';
+  const shelfParam = (searchParams.get('shelf') || '') as ShelfStatus | '';
 
   const [searchQuery, setSearchQuery] = useState(queryParam);
   const [sortBy, setSortBy] = useState<NonNullable<SearchParams['sort']>>('title');
@@ -24,13 +31,18 @@ export default function Library() {
   const [selectedAuthor, setSelectedAuthor] = useState<string>('');
   const [selectedSeries, setSelectedSeries] = useState<string>('');
   const [selectedTags, setSelectedTags] = useState<string[]>(tagParam ? [tagParam] : []);
-  const [selectedFormats, setSelectedFormats] = useState<('EPUB' | 'PDF')[]>([]);
+  const [selectedFormats, setSelectedFormats] = useState<BookFormat[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('');
+  const [selectedShelf, setSelectedShelf] = useState<ShelfStatus | ''>(shelfParam);
   const [filterOpen, setFilterOpen] = useState(false);
+
+  useEffect(() => {
+    setSelectedShelf(shelfParam);
+  }, [shelfParam]);
 
   const hasActiveFilters =
     !!selectedAuthor || !!selectedSeries || selectedTags.length > 0 ||
-    selectedFormats.length > 0 || !!selectedLanguage;
+    selectedFormats.length > 0 || !!selectedLanguage || !!selectedShelf;
 
   const clearFilters = () => {
     setSelectedAuthor('');
@@ -38,6 +50,7 @@ export default function Library() {
     setSelectedTags([]);
     setSelectedFormats([]);
     setSelectedLanguage('');
+    setSelectedShelf('');
   };
 
   const { data: authorsData } = useQuery({
@@ -74,8 +87,23 @@ export default function Library() {
     },
   });
 
-  const books = data?.books || [];
-  const total = data?.total ?? books.length;
+  // Shelf filtering is per-user and served by a dedicated endpoint, so when a
+  // shelf is selected we source the list from there and apply the text search
+  // client-side (other column filters don't apply to shelves).
+  const { data: shelfData, isLoading: shelfLoading } = useQuery({
+    queryKey: ['shelf', selectedShelf],
+    queryFn: async () => (await shelfApi.list(selectedShelf as ShelfStatus)).data,
+    enabled: !!selectedShelf,
+  });
+
+  let books = data?.books || [];
+  if (selectedShelf) {
+    const q = searchQuery.trim().toLowerCase();
+    books = (shelfData || []).filter(
+      (b) => !q || b.title.toLowerCase().includes(q) || (b.authors || []).some((a) => a.name.toLowerCase().includes(q))
+    );
+  }
+  const total = selectedShelf ? books.length : (data?.total ?? books.length);
   const authors = authorsData?.data || [];
   const seriesList = seriesData?.data || [];
   const tags = tagsData?.data || [];
@@ -98,7 +126,7 @@ export default function Library() {
     );
   };
 
-  const toggleFormat = (fmt: 'EPUB' | 'PDF') => {
+  const toggleFormat = (fmt: BookFormat) => {
     setSelectedFormats((prev) =>
       prev.includes(fmt) ? prev.filter((f) => f !== fmt) : [...prev, fmt]
     );
@@ -151,7 +179,7 @@ export default function Library() {
                 Filters
                 {hasActiveFilters && (
                   <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-cream text-ember-600 rounded-full">
-                    {[selectedAuthor, selectedSeries, selectedLanguage].filter(Boolean).length + selectedTags.length + selectedFormats.length}
+                    {[selectedAuthor, selectedSeries, selectedLanguage, selectedShelf].filter(Boolean).length + selectedTags.length + selectedFormats.length}
                   </span>
                 )}
               </button>
@@ -202,6 +230,27 @@ export default function Library() {
           {filterOpen && (
             <div className="mt-4 pt-4 border-t border-parchment-300 space-y-4">
               <div className="flex flex-wrap gap-4">
+                {/* Shelf */}
+                <div className="flex-shrink-0">
+                  <p className="text-xs font-semibold text-ink-500 mb-2 uppercase tracking-wide">Shelf</p>
+                  <div className="flex gap-2">
+                    {SHELF_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setSelectedShelf((prev) => (prev === opt.value ? '' : opt.value))}
+                        className={`px-3 py-1 text-xs font-medium rounded-full border transition-all duration-150 ${
+                          selectedShelf === opt.value
+                            ? 'bg-ember-500 text-cream border-ember-500'
+                            : 'bg-parchment-100 text-ink-600 border-parchment-300 hover:bg-parchment-200'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Format */}
                 <div className="flex-shrink-0">
                   <p className="text-xs font-semibold text-ink-500 mb-2 uppercase tracking-wide">Format</p>
@@ -321,6 +370,12 @@ export default function Library() {
       {/* Active filter chips (when panel is closed) */}
       {!filterOpen && hasActiveFilters && (
         <div className="max-w-7xl mx-auto px-8 pt-4 flex flex-wrap gap-2 items-center">
+          {selectedShelf && (
+            <FilterChip
+              label={SHELF_OPTIONS.find((o) => o.value === selectedShelf)?.label || 'Shelf'}
+              onRemove={() => setSelectedShelf('')}
+            />
+          )}
           {selectedFormats.map((fmt) => (
             <FilterChip key={fmt} label={fmt} onRemove={() => toggleFormat(fmt)} />
           ))}
@@ -355,7 +410,7 @@ export default function Library() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-8 py-8">
-        {isLoading ? (
+        {(selectedShelf ? shelfLoading : isLoading) ? (
           <LoadingState viewMode={viewMode} />
         ) : books.length === 0 ? (
           <EmptyState searchQuery={searchQuery} />

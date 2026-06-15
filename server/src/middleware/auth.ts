@@ -14,6 +14,40 @@ export interface AuthRequest extends Request {
   };
 }
 
+// Cached knowledge of whether the users.is_active column exists yet. It's added
+// by the Wave 3 migration; until that runs, the column-referencing auth queries
+// would throw and lock everyone out. We detect the missing column once (Postgres
+// error 42703 = undefined_column), warn, and thereafter treat accounts as active
+// so a forgotten migration degrades gracefully instead of breaking all auth.
+let usersHaveIsActiveColumn: boolean | null = null;
+
+type AuthUser = { id: string; username: string; is_admin: boolean; is_active: boolean };
+
+async function selectAuthUserById(id: string): Promise<AuthUser | null> {
+  if (usersHaveIsActiveColumn !== false) {
+    try {
+      const u = await db.oneOrNone<AuthUser>(
+        'SELECT id, username, is_admin, is_active FROM users WHERE id = $1',
+        [id]
+      );
+      usersHaveIsActiveColumn = true;
+      return u;
+    } catch (err: any) {
+      if (err?.code !== '42703') throw err;
+      usersHaveIsActiveColumn = false;
+      logger.warn(
+        'users.is_active column is missing — run database migrations (npm run migrate). ' +
+          'Treating all accounts as active until then.'
+      );
+    }
+  }
+  const u = await db.oneOrNone<Omit<AuthUser, 'is_active'>>(
+    'SELECT id, username, is_admin FROM users WHERE id = $1',
+    [id]
+  );
+  return u ? { ...u, is_active: true } : null;
+}
+
 export async function authenticateToken(
   req: AuthRequest,
   res: Response,
@@ -34,14 +68,17 @@ export async function authenticateToken(
       is_admin: boolean;
     };
 
-    // Verify user still exists
-    const user = await db.oneOrNone<User>(
-      'SELECT id, username, is_admin FROM users WHERE id = $1',
-      [decoded.id]
-    );
+    // Verify user still exists and is still active (so disabling an account
+    // immediately invalidates any tokens it already holds).
+    const user = await selectAuthUserById(decoded.id);
 
     if (!user) {
       res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+
+    if (user.is_active === false) {
+      res.status(403).json({ error: 'Account disabled' });
       return;
     }
 
@@ -89,7 +126,7 @@ export async function authenticateOpds(
       const password = decoded.slice(sep + 1);
 
       const user = await db.oneOrNone<User>('SELECT * FROM users WHERE username = $1', [username]);
-      if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      if (!user || user.is_active === false || !(await bcrypt.compare(password, user.password_hash))) {
         fail();
         return;
       }
@@ -101,8 +138,8 @@ export async function authenticateOpds(
     if (authHeader.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
       const decoded = jwt.verify(token, config.jwtSecret) as { id: string; username: string; is_admin: boolean };
-      const user = await db.oneOrNone<User>('SELECT id, username, is_admin FROM users WHERE id = $1', [decoded.id]);
-      if (!user) {
+      const user = await selectAuthUserById(decoded.id);
+      if (!user || user.is_active === false) {
         fail();
         return;
       }

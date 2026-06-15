@@ -4,11 +4,12 @@ import { logger } from '../utils/logger';
 import { config } from '../utils/config';
 import { hashFile } from '../utils/hash';
 import db from '../db';
-import { BookFile } from '../types';
+import { BookFile, BookFormat } from '../types';
 
 export class LibraryScanner {
   private booksPath: string;
-  private supportedFormats = ['.epub', '.pdf'];
+  // Readable in-app: .epub, .pdf, .cbz. Listable/downloadable only: .mobi, .azw3.
+  private supportedFormats = ['.epub', '.pdf', '.cbz', '.mobi', '.azw3'];
 
   constructor(booksPath: string = config.booksPath) {
     this.booksPath = booksPath;
@@ -26,11 +27,19 @@ export class LibraryScanner {
     let filesRemoved = 0;
 
     try {
+      await this.updateProgress(scanId, { phase: 'SCANNING', file: null });
+
       // Get all files from disk
       const diskFiles = await this.getAllBookFiles(this.booksPath);
       filesScanned = diskFiles.length;
 
       logger.info(`Found ${filesScanned} book files on disk`);
+
+      await db.none(
+        `UPDATE scan_history SET files_total = $1, current_phase = 'SCANNING',
+           progress_updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [diskFiles.length, scanId]
+      );
 
       // Get existing files from database
       const dbFiles = await db.manyOrNone<BookFile>('SELECT * FROM book_files');
@@ -38,9 +47,23 @@ export class LibraryScanner {
       const dbFileByHash = new Map((dbFiles || []).map(f => [f.file_hash, f]));
 
       // Process each file
+      let processed = 0;
       for (const filePath of diskFiles) {
         try {
           const relativePath = path.relative(this.booksPath, filePath);
+
+          // Throttled progress write (every few files + first one) so the SSE
+          // stream stays live without a DB write per file on large libraries.
+          if (processed % 5 === 0) {
+            await this.updateProgress(scanId, {
+              phase: 'SCANNING',
+              file: relativePath,
+              scanned: processed,
+              added: filesAdded,
+              updated: filesUpdated,
+            });
+          }
+          processed++;
           const stats = await fs.stat(filePath);
           const fileHash = await hashFile(filePath);
 
@@ -111,7 +134,10 @@ export class LibraryScanner {
              files_scanned = $1,
              files_added = $2,
              files_updated = $3,
-             files_removed = $4
+             files_removed = $4,
+             current_phase = 'COMPLETED',
+             current_file = NULL,
+             progress_updated_at = CURRENT_TIMESTAMP
          WHERE id = $5`,
         [filesScanned, filesAdded, filesUpdated, filesRemoved, scanId]
       );
@@ -126,12 +152,40 @@ export class LibraryScanner {
         `UPDATE scan_history
          SET status = 'FAILED',
              completed_at = CURRENT_TIMESTAMP,
+             current_phase = 'FAILED',
+             current_file = NULL,
+             progress_updated_at = CURRENT_TIMESTAMP,
              error_message = $1
          WHERE id = $2`,
         [error instanceof Error ? error.message : 'Unknown error', scanId]
       );
 
       throw error;
+    }
+  }
+
+  /**
+   * Write a live progress snapshot to scan_history. The API streams these rows
+   * to the Admin page over SSE. Best-effort: a failed progress write must never
+   * abort the scan.
+   */
+  private async updateProgress(
+    scanId: string,
+    p: { phase?: string; file?: string | null; scanned?: number; added?: number; updated?: number }
+  ): Promise<void> {
+    try {
+      const sets: string[] = ['progress_updated_at = CURRENT_TIMESTAMP'];
+      const values: any[] = [];
+      let i = 1;
+      if (p.phase !== undefined) { sets.push(`current_phase = $${i++}`); values.push(p.phase); }
+      if (p.file !== undefined) { sets.push(`current_file = $${i++}`); values.push(p.file); }
+      if (p.scanned !== undefined) { sets.push(`files_scanned = $${i++}`); values.push(p.scanned); }
+      if (p.added !== undefined) { sets.push(`files_added = $${i++}`); values.push(p.added); }
+      if (p.updated !== undefined) { sets.push(`files_updated = $${i++}`); values.push(p.updated); }
+      values.push(scanId);
+      await db.none(`UPDATE scan_history SET ${sets.join(', ')} WHERE id = $${i}`, values);
+    } catch (error) {
+      logger.warn('Failed to write scan progress:', error);
     }
   }
 
@@ -180,7 +234,7 @@ export class LibraryScanner {
     modifiedTime: Date
   ): Promise<void> {
     const ext = path.extname(relativePath);
-    const format = ext.substring(1).toUpperCase() as 'EPUB' | 'PDF';
+    const format = ext.substring(1).toUpperCase() as BookFormat;
     const baseName = path.basename(relativePath, ext);
 
     // Look for a sibling file (other format) of the same book: same directory,

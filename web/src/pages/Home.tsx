@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { books as booksApi } from '../lib/api';
+import { books as booksApi, shelf as shelfApi } from '../lib/api';
 import BookCard from '../components/BookCard';
 import { Link } from 'react-router-dom';
 import { getAllLocalProgress } from '../lib/readerProgress';
@@ -8,6 +8,15 @@ export default function Home() {
   const { data: continueReading } = useQuery({
     queryKey: ['continue-reading'],
     queryFn: () => booksApi.getContinueReading(6),
+  });
+
+  const { data: wantToRead } = useQuery({
+    queryKey: ['shelf', 'WANT_TO_READ'],
+    queryFn: async () => (await shelfApi.list('WANT_TO_READ')).data,
+  });
+  const { data: reading } = useQuery({
+    queryKey: ['shelf', 'READING'],
+    queryFn: async () => (await shelfApi.list('READING')).data,
   });
 
   const { data: recentBooks } = useQuery({
@@ -160,8 +169,49 @@ export default function Home() {
             </div>
           </section>
         )}
+
+        <ShelfSection title="Currently Reading" subtitle="On your Reading shelf" books={reading} />
+        <ShelfSection title="Want to Read" subtitle="Saved for later" books={wantToRead} />
       </div>
     </div>
+  );
+}
+
+function ShelfSection({
+  title,
+  subtitle,
+  books,
+}: {
+  title: string;
+  subtitle: string;
+  books?: import('../types').ShelfBook[];
+}) {
+  if (!books || books.length === 0) return null;
+  return (
+    <section className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-serif font-bold text-ink-900">{title}</h2>
+          <p className="text-ink-500 mt-1">{subtitle}</p>
+        </div>
+        <Link
+          to={`/library?shelf=${title === 'Want to Read' ? 'WANT_TO_READ' : 'READING'}`}
+          className="text-sm text-ember-600 hover:text-ember-700 transition-colors flex items-center gap-1 group"
+        >
+          <span>See all</span>
+          <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+      </div>
+      <div className="flex overflow-x-auto gap-6 pb-4 scrollbar-hide -mx-8 px-8">
+        {books.slice(0, 12).map((book) => (
+          <div key={book.id} className="flex-none w-44">
+            <BookCard book={book} />
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

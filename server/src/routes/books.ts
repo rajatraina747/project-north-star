@@ -71,7 +71,17 @@ export async function attachListDetails(books: Book[]): Promise<any[]> {
 
 // Upload limit (MB). Kept generous for large PDFs; configurable via env.
 const UPLOAD_MAX_MB = parseInt(process.env.UPLOAD_MAX_MB || '200', 10);
-const ALLOWED_UPLOAD_EXTS = ['.epub', '.pdf'];
+const ALLOWED_UPLOAD_EXTS = ['.epub', '.pdf', '.cbz', '.mobi', '.azw3'];
+
+// MIME types per format for the file-serving route. CBZ is a ZIP of images;
+// MOBI/AZW3 are download-only (no in-app reader).
+const FORMAT_MIME_TYPES: Record<string, string> = {
+  EPUB: 'application/epub+zip',
+  PDF: 'application/pdf',
+  CBZ: 'application/vnd.comicbook+zip',
+  MOBI: 'application/x-mobipocket-ebook',
+  AZW3: 'application/vnd.amazon.ebook',
+};
 
 const uploadHandler = multer({
   storage: multer.memoryStorage(),
@@ -79,7 +89,7 @@ const uploadHandler = multer({
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (!ALLOWED_UPLOAD_EXTS.includes(ext)) {
-      cb(new Error('Only .epub and .pdf files are allowed'));
+      cb(new Error('Unsupported file type. Allowed: EPUB, PDF, CBZ, MOBI, AZW3'));
       return;
     }
     cb(null, true);
@@ -124,7 +134,7 @@ router.post('/upload', requireAdmin, (req: AuthRequest, res) => {
 
       const ext = path.extname(file.originalname).toLowerCase();
       if (!ALLOWED_UPLOAD_EXTS.includes(ext)) {
-        res.status(415).json({ error: 'Only .epub and .pdf files are allowed' });
+        res.status(415).json({ error: 'Unsupported file type. Allowed: EPUB, PDF, CBZ, MOBI, AZW3' });
         return;
       }
 
@@ -487,7 +497,7 @@ router.get('/:id/file/:fileId', async (req: AuthRequest, res) => {
 
     try {
       await fs.access(fullPath);
-      const mimeType = file.format === 'EPUB' ? 'application/epub+zip' : 'application/pdf';
+      const mimeType = FORMAT_MIME_TYPES[file.format] || 'application/octet-stream';
 
       // Headers for epub.js / PDF.js byte-range support.
       // CORS is handled by the global cors() middleware — no manual header here.
