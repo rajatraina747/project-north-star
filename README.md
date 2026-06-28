@@ -25,10 +25,29 @@ North Star is a self-hosted library for EPUB and PDF books — think Plex, but f
 
 ## Screenshots
 
-<!-- TODO: No screenshot image files exist in the repo yet. Add real screenshots
-     of your deployed instance here (e.g. ![Library](docs/screenshots/library.png))
-     once they exist. Do not link images that have not been committed. -->
-*Screenshots will be added here.*
+**Home** — Continue Reading picks up where you left off, with Recently Added below.
+
+![Home](docs/screenshots/home.png)
+
+| Library | Book detail |
+|---|---|
+| ![Library](docs/screenshots/library.png) | ![Book detail](docs/screenshots/book-detail.png) |
+
+**Reader** — full EPUB reader in the browser (PDF and comic readers too).
+
+![Reader](docs/screenshots/reader.png)
+
+**Sign in** — the first user to register becomes the admin; registration closes after that.
+
+![Sign in](docs/screenshots/login.png)
+
+### Dark mode
+
+The whole UI ships a warm light theme and a dark theme (plus a "follow system" option).
+
+| Home | Reader | Sign in |
+|---|---|---|
+| ![Home, dark](docs/screenshots/home-dark.png) | ![Reader, dark](docs/screenshots/reader-dark.png) | ![Sign in, dark](docs/screenshots/login-dark.png) |
 
 ---
 
