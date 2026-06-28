@@ -1,6 +1,7 @@
 import axios from 'axios';
+import type { InternalAxiosRequestConfig } from 'axios';
 import type { Book, BookWithDetails, ReadingProgress, ReadingStats, User, Bookmark, AuthorWithBooks, SeriesWithBooks, Tag, Author, Series, ShelfStatus, ShelfBook, ScanHistory, BookFormat } from '../types';
-import { getToken, useAuthStore } from './auth';
+import { getToken, getRefreshToken, useAuthStore } from './auth';
 
 const api = axios.create({
   baseURL: '/api',
@@ -8,6 +9,11 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Marker so a request that already triggered a refresh isn't retried in a loop.
+interface RetryableConfig extends InternalAxiosRequestConfig {
+  _retried?: boolean;
+}
 
 api.interceptors.request.use((config) => {
   const token = getToken();
@@ -17,16 +23,53 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Single-flight access-token renewal: many requests may 401 at once when the
+// access token expires; they all await the same refresh call rather than each
+// firing their own.
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+  if (!refreshPromise) {
+    refreshPromise = api
+      .post('/auth/refresh', { refresh_token: refreshToken })
+      .then((res) => {
+        const { token, refresh_token: rotated } = res.data as { token: string; refresh_token: string | null };
+        useAuthStore.getState().setTokens(token, rotated ?? null);
+        return token;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      const url = error.config?.url || '';
-      const isAuthRequest = url.includes('/auth/login') || url.includes('/auth/register');
-      if (!isAuthRequest) {
-        useAuthStore.getState().logout();
-        window.location.href = '/login';
+  async (error) => {
+    const original = (error.config || {}) as RetryableConfig;
+    const url = original.url || '';
+    const isAuthRequest =
+      url.includes('/auth/login') ||
+      url.includes('/auth/register') ||
+      url.includes('/auth/refresh');
+
+    if (error.response?.status === 401 && !isAuthRequest) {
+      // Try once to renew the session before giving up.
+      if (!original._retried) {
+        original._retried = true;
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          original.headers = original.headers ?? {};
+          original.headers.Authorization = `Bearer ${newToken}`;
+          return api(original);
+        }
       }
+      useAuthStore.getState().logout();
+      window.location.href = '/login';
     }
     return Promise.reject(error);
   }
@@ -39,6 +82,18 @@ export const auth = {
   registrationStatus: () => api.get<{ open: boolean }>('/auth/registration-status'),
   register: (data: { username: string; email: string; password: string; display_name?: string }) =>
     api.post('/auth/register', data),
+  // Revoke the refresh token server-side on sign-out (best-effort).
+  logout: (refreshToken: string) => api.post('/auth/logout', { refresh_token: refreshToken }),
+  // Self-service password reset. forgotPassword returns a generic message; the
+  // reset link is logged server-side (and only echoed when the server is
+  // configured to return it for headless/no-email setups).
+  forgotPassword: (identifier: string) =>
+    api.post<{ message: string; reset_token?: string; reset_link?: string }>(
+      '/auth/forgot-password',
+      { identifier }
+    ),
+  resetPassword: (token: string, password: string) =>
+    api.post<{ message: string }>('/auth/reset-password', { token, password }),
 };
 
 export interface AdminUser extends User {

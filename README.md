@@ -160,7 +160,11 @@ The web UI is on port `8080` by default. **Put a TLS-terminating reverse proxy (
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/auth/register` | Create first admin (open only when zero users exist) |
-| `POST` | `/api/auth/login` | Login, returns JWT |
+| `POST` | `/api/auth/login` | Login, returns an access JWT + refresh token |
+| `POST` | `/api/auth/refresh` | Exchange a refresh token for a fresh access token (rotates) |
+| `POST` | `/api/auth/logout` | Revoke a refresh token |
+| `POST` | `/api/auth/forgot-password` | Start a self-service password reset (link is logged) |
+| `POST` | `/api/auth/reset-password` | Complete a reset with a token |
 | `GET` | `/api/auth/me` | Current user info |
 
 </details>

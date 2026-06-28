@@ -1,10 +1,20 @@
 import { Link, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../lib/auth';
+import { useAuthStore, getRefreshToken } from '../lib/auth';
+import { auth } from '../lib/api';
 import ThemeToggle from './ThemeToggle';
 
 export default function Nav() {
   const location = useLocation();
   const { user, logout } = useAuthStore();
+
+  // Revoke the refresh token server-side before clearing local session state.
+  const handleSignOut = async () => {
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      await auth.logout(refreshToken).catch(() => undefined);
+    }
+    logout();
+  };
 
   const navItems = [
     { path: '/', label: 'Home', icon: HomeIcon, exact: true },
@@ -72,7 +82,7 @@ export default function Nav() {
           </div>
         </div>
         <button
-          onClick={logout}
+          onClick={handleSignOut}
           className="w-full mt-2 flex items-center justify-center space-x-2 px-4 py-2 text-sm text-ink-400 hover:text-ember-700 hover:bg-parchment-200 rounded-lg transition-colors duration-250 ease-soft"
         >
           <LogoutIcon className="w-4 h-4" />

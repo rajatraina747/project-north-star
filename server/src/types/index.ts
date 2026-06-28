@@ -234,6 +234,9 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   token: string;
+  // Rotating refresh token. Null when the refresh_tokens table isn't present yet
+  // (migration 003 not run) — the access token still works, just without renewal.
+  refresh_token: string | null;
   user: {
     id: string;
     username: string;

@@ -5,9 +5,11 @@ import type { User } from '../types';
 interface AuthState {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
   hasHydrated: boolean;
-  login: (token: string, user: User) => void;
+  login: (token: string, refreshToken: string | null, user: User) => void;
+  setTokens: (token: string, refreshToken: string | null) => void;
   logout: () => void;
   setUser: (user: User) => void;
   setHasHydrated: (value: boolean) => void;
@@ -18,13 +20,17 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
+      refreshToken: null,
       isAuthenticated: false,
       hasHydrated: false,
-      login: (token, user) => {
-        set({ token, user, isAuthenticated: true });
+      login: (token, refreshToken, user) => {
+        set({ token, refreshToken, user, isAuthenticated: true });
+      },
+      setTokens: (token, refreshToken) => {
+        set({ token, refreshToken });
       },
       logout: () => {
-        set({ token: null, user: null, isAuthenticated: false });
+        set({ token: null, refreshToken: null, user: null, isAuthenticated: false });
       },
       setUser: (user) => set({ user }),
       setHasHydrated: (value) => set({ hasHydrated: value }),
@@ -47,3 +53,6 @@ export const useAuthStore = create<AuthState>()(
  * fetch calls) instead of reading a separate localStorage key.
  */
 export const getToken = (): string | null => useAuthStore.getState().token;
+
+/** The persisted refresh token, for the access-token renewal flow. */
+export const getRefreshToken = (): string | null => useAuthStore.getState().refreshToken;

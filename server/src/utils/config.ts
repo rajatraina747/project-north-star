@@ -21,6 +21,10 @@ export const config = {
   // 24 h default — short enough to limit the damage if a localStorage-stored
   // token is stolen via XSS, while still comfortable for normal use.
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
+  // Refresh tokens: a long-lived, rotating, server-stored token (only its hash
+  // is persisted) lets the short access token above renew instead of the
+  // session hard-expiring. Revoked on logout and password reset.
+  jwtRefreshExpiresInDays: parseInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS || '30', 10),
 
   // API Keys
   googleBooksApiKey: process.env.GOOGLE_BOOKS_API_KEY || '',
@@ -48,6 +52,13 @@ export const config = {
   // temporarily locked for the configured number of minutes.
   loginMaxAttempts: parseInt(process.env.LOGIN_MAX_ATTEMPTS || '5', 10),
   loginLockoutMinutes: parseInt(process.env.LOGIN_LOCKOUT_MINUTES || '15', 10),
+  // Password reset: how long a reset token is valid for. There is no paid email
+  // provider — the reset link is always logged (the pluggable delivery seam in
+  // routes/auth.ts), and can optionally be returned in the API response for
+  // headless/no-email self-hosting. appBaseUrl is used to build the link.
+  passwordResetTtlMinutes: parseInt(process.env.PASSWORD_RESET_TTL_MINUTES || '60', 10),
+  passwordResetReturnLink: process.env.PASSWORD_RESET_RETURN_LINK === 'true',
+  appBaseUrl: process.env.APP_BASE_URL || '',
 };
 
 const DEFAULT_JWT_SECRET = 'change-me-in-production-please';

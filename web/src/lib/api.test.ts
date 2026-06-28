@@ -12,7 +12,7 @@ const stubAdapter = (impl: AxiosAdapter) => {
 
 describe('api axios interceptors', () => {
   beforeEach(() => {
-    useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
+    useAuthStore.setState({ user: null, token: null, refreshToken: null, isAuthenticated: false });
   });
 
   it('attaches the bearer token from the auth store to requests', async () => {
@@ -63,5 +63,53 @@ describe('api axios interceptors', () => {
     );
     await expect(api.post('/auth/login', {})).rejects.toBeTruthy();
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('refreshes the access token on a 401 and retries the original request', async () => {
+    useAuthStore.setState({ token: 'jwt-old', refreshToken: 'refresh-1', isAuthenticated: true });
+    let retriedAuthHeader: string | undefined;
+
+    stubAdapter(async (config) => {
+      if ((config.url || '').includes('/auth/refresh')) {
+        return {
+          data: { token: 'jwt-new', refresh_token: 'refresh-2' },
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+        };
+      }
+      // First hit on the protected resource 401s; the retry (carrying the new
+      // token) succeeds.
+      if (!(config as { _retried?: boolean })._retried) {
+        return Promise.reject({ response: { status: 401 }, config });
+      }
+      retriedAuthHeader = config.headers.Authorization as string;
+      return { data: { ok: true }, status: 200, statusText: 'OK', headers: {}, config };
+    });
+
+    const res = await api.get('/books');
+    expect(res.data).toEqual({ ok: true });
+    expect(retriedAuthHeader).toBe('Bearer jwt-new');
+    // Rotated tokens were stored.
+    expect(useAuthStore.getState().token).toBe('jwt-new');
+    expect(useAuthStore.getState().refreshToken).toBe('refresh-2');
+  });
+
+  it('logs out when the refresh attempt itself fails', async () => {
+    useAuthStore.setState({ token: 'jwt-old', refreshToken: 'refresh-1', isAuthenticated: true });
+    const original = window.location;
+    Object.defineProperty(window, 'location', { configurable: true, value: { href: '' } });
+
+    stubAdapter(async (config) => {
+      // Both the resource and the refresh return 401.
+      return Promise.reject({ response: { status: 401 }, config });
+    });
+
+    await expect(api.get('/books')).rejects.toBeTruthy();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(window.location.href).toBe('/login');
+
+    Object.defineProperty(window, 'location', { configurable: true, value: original });
   });
 });

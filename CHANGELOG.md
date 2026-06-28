@@ -19,6 +19,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - True streaming for PDFs: reader fetches byte ranges via short-lived signed
   file tickets instead of buffering the whole file in memory.
 - Account lockout after repeated failed logins (configurable threshold/window).
+- JWT refresh tokens: login/registration now also issue a long-lived, rotating,
+  server-stored refresh token (only its hash is persisted) so the access token
+  renews via `POST /api/auth/refresh` instead of the session hard-expiring at
+  24h. The web client refreshes transparently on a 401 and revokes the token on
+  sign-out (`POST /api/auth/logout`).
+- Self-service password reset: `POST /api/auth/forgot-password` (no account
+  enumeration) issues a token-based reset link, and `POST /api/auth/reset-password`
+  consumes it. No paid email provider is required — the link is logged via a
+  pluggable delivery seam and can optionally be returned in the API response for
+  headless setups. New reset UI on the login screen.
 - Reading insights: longest streak and reading pace (pages/hour) on the Stats
   page.
 - Comic (CBZ) reader: double-page spreads, continuous (webtoon) scrolling,

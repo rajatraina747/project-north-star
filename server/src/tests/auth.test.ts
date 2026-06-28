@@ -13,6 +13,10 @@ vi.mock('../utils/config', () => ({
   config: {
     jwtSecret: MOCK_SECRET,
     jwtExpiresIn: '1h',
+    jwtRefreshExpiresInDays: 30,
+    passwordResetTtlMinutes: 60,
+    passwordResetReturnLink: false,
+    appBaseUrl: 'http://localhost:5173',
     nodeEnv: 'test',
     rateLimitWindowMs: 900000,
     rateLimitMaxRequests: 100,
@@ -133,6 +137,7 @@ describe('POST /api/auth/login', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('token');
+    expect(res.body.refresh_token).toBeTruthy();
     const decoded = jwt.verify(res.body.token, MOCK_SECRET) as any;
     expect(decoded.username).toBe('admin');
     expect(decoded.is_admin).toBe(true);
@@ -228,7 +233,193 @@ describe('POST /api/auth/register', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('token');
+    expect(res.body.refresh_token).toBeTruthy();
     const decoded = jwt.verify(res.body.token, MOCK_SECRET) as any;
     expect(decoded.is_admin).toBe(true);
+  });
+});
+
+describe('POST /api/auth/refresh', () => {
+  it('returns 400 when no refresh token is supplied', async () => {
+    const res = await request(app).post('/api/auth/refresh').send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 401 for an unknown refresh token', async () => {
+    const db = (await import('../db')).default as any;
+    db.oneOrNone.mockResolvedValueOnce(null); // token lookup
+    const res = await request(app).post('/api/auth/refresh').send({ refresh_token: 'nope' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 for a revoked or expired refresh token', async () => {
+    const db = (await import('../db')).default as any;
+    db.oneOrNone.mockResolvedValueOnce({
+      id: 'rt-1',
+      user_id: 'uid-1',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      revoked_at: new Date().toISOString(),
+    });
+    const res = await request(app).post('/api/auth/refresh').send({ refresh_token: 'revoked' });
+    expect(res.status).toBe(401);
+  });
+
+  it('rotates the token and returns a fresh access token', async () => {
+    const db = (await import('../db')).default as any;
+    db.none.mockClear();
+    // token lookup (valid)
+    db.oneOrNone.mockResolvedValueOnce({
+      id: 'rt-1',
+      user_id: 'uid-1',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      revoked_at: null,
+    });
+    // user lookup
+    db.oneOrNone.mockResolvedValueOnce({
+      id: 'uid-1',
+      username: 'admin',
+      is_admin: true,
+      display_name: 'Admin',
+    });
+
+    const res = await request(app).post('/api/auth/refresh').send({ refresh_token: 'valid' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.refresh_token).toBeTruthy();
+    const decoded = jwt.verify(res.body.token, MOCK_SECRET) as any;
+    expect(decoded.username).toBe('admin');
+    // The presented token was revoked (rotation).
+    expect(db.none).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1'),
+      ['rt-1']
+    );
+  });
+
+  it('returns 403 when the account is disabled', async () => {
+    const db = (await import('../db')).default as any;
+    db.oneOrNone.mockResolvedValueOnce({
+      id: 'rt-1',
+      user_id: 'uid-1',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      revoked_at: null,
+    });
+    db.oneOrNone.mockResolvedValueOnce({
+      id: 'uid-1',
+      username: 'admin',
+      is_admin: false,
+      is_active: false,
+    });
+    const res = await request(app).post('/api/auth/refresh').send({ refresh_token: 'valid' });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('POST /api/auth/forgot-password', () => {
+  it('returns 400 when no identifier is supplied', async () => {
+    const res = await request(app).post('/api/auth/forgot-password').send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('responds generically when the account does not exist (no enumeration)', async () => {
+    const db = (await import('../db')).default as any;
+    db.none.mockClear();
+    db.oneOrNone.mockResolvedValueOnce(null);
+    const res = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ identifier: 'ghost' });
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/if an account matches/i);
+    // No token row was inserted for a non-existent user.
+    expect(db.none).not.toHaveBeenCalled();
+  });
+
+  it('creates a reset token for an existing account', async () => {
+    const db = (await import('../db')).default as any;
+    db.none.mockClear();
+    db.oneOrNone.mockResolvedValueOnce({
+      id: 'uid-1',
+      username: 'admin',
+      email: 'admin@example.com',
+    });
+    const res = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ identifier: 'admin' });
+    expect(res.status).toBe(200);
+    // Default config does not leak the token in the response.
+    expect(res.body.reset_token).toBeUndefined();
+    expect(db.none).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO password_reset_tokens'),
+      expect.arrayContaining(['uid-1'])
+    );
+  });
+});
+
+describe('POST /api/auth/reset-password', () => {
+  it('returns 400 when token or password is missing', async () => {
+    const res = await request(app).post('/api/auth/reset-password').send({ token: 'x' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for a short password', async () => {
+    const res = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: 'x', password: 'short' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/at least 8/i);
+  });
+
+  it('returns 400 for an invalid/used/expired token', async () => {
+    const db = (await import('../db')).default as any;
+    db.oneOrNone.mockResolvedValueOnce(null);
+    const res = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: 'bad', password: 'longenough' });
+    expect(res.status).toBe(400);
+  });
+
+  it('updates the password and revokes sessions for a valid token', async () => {
+    const db = (await import('../db')).default as any;
+    db.none.mockClear();
+    db.oneOrNone.mockResolvedValueOnce({
+      id: 'prt-1',
+      user_id: 'uid-1',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      used_at: null,
+    });
+    const res = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: 'good', password: 'longenough' });
+
+    expect(res.status).toBe(200);
+    expect(db.none).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE users SET password_hash'),
+      expect.arrayContaining(['uid-1'])
+    );
+    // Sessions invalidated after the credential change.
+    expect(db.none).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1'),
+      ['uid-1']
+    );
+  });
+});
+
+describe('POST /api/auth/logout', () => {
+  it('revokes the supplied refresh token and returns 200', async () => {
+    const db = (await import('../db')).default as any;
+    db.none.mockClear();
+    const res = await request(app).post('/api/auth/logout').send({ refresh_token: 'abc' });
+    expect(res.status).toBe(200);
+    expect(db.none).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1'),
+      expect.any(Array)
+    );
+  });
+
+  it('is a no-op (still 200) when no token is supplied', async () => {
+    const db = (await import('../db')).default as any;
+    db.none.mockClear();
+    const res = await request(app).post('/api/auth/logout').send({});
+    expect(res.status).toBe(200);
+    expect(db.none).not.toHaveBeenCalled();
   });
 });

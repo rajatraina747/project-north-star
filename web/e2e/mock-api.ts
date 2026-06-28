@@ -61,8 +61,16 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
   await page.route('**/api/shelf**', (r) => json(r, []));
 
   await page.route('**/api/auth/registration-status', (r) => json(r, { open: registrationOpen }));
-  await page.route('**/api/auth/login', (r) => json(r, { token: TEST_TOKEN, user: TEST_USER }));
-  await page.route('**/api/auth/register', (r) => json(r, { token: TEST_TOKEN, user: TEST_USER }));
+  await page.route('**/api/auth/login', (r) =>
+    json(r, { token: TEST_TOKEN, refresh_token: 'e2e-refresh', user: TEST_USER })
+  );
+  await page.route('**/api/auth/register', (r) =>
+    json(r, { token: TEST_TOKEN, refresh_token: 'e2e-refresh', user: TEST_USER })
+  );
+  await page.route('**/api/auth/refresh', (r) =>
+    json(r, { token: TEST_TOKEN, refresh_token: 'e2e-refresh', user: TEST_USER })
+  );
+  await page.route('**/api/auth/logout', (r) => json(r, { message: 'Logged out' }));
   await page.route('**/api/auth/me', (r) => json(r, TEST_USER));
 
   // Library / home data.
