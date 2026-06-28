@@ -41,6 +41,13 @@ export const config = {
   // Security
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 min
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
+  // bcrypt cost factor for password hashing. 10 is a sensible default; raise for
+  // stronger hashing at the cost of slower logins.
+  bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '10', 10),
+  // Account lockout: after this many consecutive failed logins, the account is
+  // temporarily locked for the configured number of minutes.
+  loginMaxAttempts: parseInt(process.env.LOGIN_MAX_ATTEMPTS || '5', 10),
+  loginLockoutMinutes: parseInt(process.env.LOGIN_LOCKOUT_MINUTES || '15', 10),
 };
 
 const DEFAULT_JWT_SECRET = 'change-me-in-production-please';

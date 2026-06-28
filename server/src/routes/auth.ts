@@ -9,6 +9,40 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * Record a failed login. Increments the consecutive-failure counter and, once it
+ * reaches the configured threshold, sets a temporary lock window. Best-effort:
+ * if the lockout columns aren't present yet (migration not run), it no-ops
+ * rather than blocking login.
+ */
+async function recordFailedLogin(userId: string, currentAttempts: number): Promise<void> {
+  const attempts = currentAttempts + 1;
+  const lock = attempts >= config.loginMaxAttempts;
+  try {
+    await db.none(
+      `UPDATE users
+       SET failed_login_attempts = $1,
+           locked_until = CASE WHEN $2 THEN NOW() + ($3 || ' minutes')::interval ELSE locked_until END
+       WHERE id = $4`,
+      [lock ? 0 : attempts, lock, String(config.loginLockoutMinutes), userId]
+    );
+  } catch (error) {
+    if ((error as { code?: string })?.code !== '42703') throw error;
+  }
+}
+
+/** Clear failure state after a successful login. Best-effort (see above). */
+async function clearFailedLogins(userId: string): Promise<void> {
+  try {
+    await db.none(
+      'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1',
+      [userId]
+    );
+  } catch (error) {
+    if ((error as { code?: string })?.code !== '42703') throw error;
+  }
+}
+
 // Login
 router.post('/login', async (req, res) => {
   try {
@@ -19,7 +53,7 @@ router.post('/login', async (req, res) => {
       return;
     }
 
-    const user = await db.oneOrNone<User>(
+    const user = await db.oneOrNone<User & { failed_login_attempts?: number; locked_until?: string | null }>(
       'SELECT * FROM users WHERE username = $1',
       [username]
     );
@@ -29,8 +63,15 @@ router.post('/login', async (req, res) => {
       return;
     }
 
+    // Reject early if the account is currently locked from prior failures.
+    if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) {
+      res.status(429).json({ error: 'Too many failed attempts. Try again later.' });
+      return;
+    }
+
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
+      await recordFailedLogin(user.id, user.failed_login_attempts ?? 0);
       res.status(401).json({ error: 'Invalid credentials' });
       return;
     }
@@ -39,6 +80,9 @@ router.post('/login', async (req, res) => {
       res.status(403).json({ error: 'Account disabled. Contact an administrator.' });
       return;
     }
+
+    // Successful login — clear any accumulated failure state.
+    await clearFailedLogins(user.id);
 
     const token = jwt.sign(
       {
@@ -113,7 +157,7 @@ router.post('/register', async (req, res) => {
       return;
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, config.bcryptRounds);
 
     const user = await db.one<User>(
       `INSERT INTO users (username, email, password_hash, display_name, is_admin)

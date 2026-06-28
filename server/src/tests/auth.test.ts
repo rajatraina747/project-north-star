@@ -16,6 +16,9 @@ vi.mock('../utils/config', () => ({
     nodeEnv: 'test',
     rateLimitWindowMs: 900000,
     rateLimitMaxRequests: 100,
+    bcryptRounds: 10,
+    loginMaxAttempts: 5,
+    loginLockoutMinutes: 15,
     databaseUrl: 'postgresql://mock',
     booksPath: '/books',
     coversPath: '/data/covers',
@@ -51,6 +54,7 @@ vi.mock('../db', () => {
   const mock = {
     oneOrNone: vi.fn(),
     one: vi.fn(),
+    none: vi.fn().mockResolvedValue(undefined),
   };
   return { default: mock };
 });
@@ -112,8 +116,9 @@ describe('POST /api/auth/login', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns a JWT on successful login', async () => {
+  it('returns a JWT on successful login and clears failure state', async () => {
     const db = (await import('../db')).default as any;
+    db.none.mockClear();
     db.oneOrNone.mockResolvedValueOnce({
       id: 'uid-1',
       username: 'admin',
@@ -131,6 +136,51 @@ describe('POST /api/auth/login', () => {
     const decoded = jwt.verify(res.body.token, MOCK_SECRET) as any;
     expect(decoded.username).toBe('admin');
     expect(decoded.is_admin).toBe(true);
+    // clearFailedLogins ran
+    expect(db.none).toHaveBeenCalledWith(
+      expect.stringContaining('failed_login_attempts = 0'),
+      ['uid-1']
+    );
+  });
+
+  it('rejects with 429 when the account is currently locked', async () => {
+    const db = (await import('../db')).default as any;
+    db.oneOrNone.mockResolvedValueOnce({
+      id: 'uid-1',
+      username: 'admin',
+      password_hash: 'secret',
+      is_admin: true,
+      locked_until: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'admin', password: 'whatever' });
+
+    expect(res.status).toBe(429);
+  });
+
+  it('records a failed attempt on a wrong password', async () => {
+    const db = (await import('../db')).default as any;
+    db.none.mockClear();
+    db.oneOrNone.mockResolvedValueOnce({
+      id: 'uid-1',
+      username: 'admin',
+      password_hash: 'correct-password',
+      is_admin: true,
+      failed_login_attempts: 2,
+    });
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'admin', password: 'wrong' });
+
+    expect(res.status).toBe(401);
+    // recordFailedLogin updated the counter (3rd attempt, below the threshold).
+    expect(db.none).toHaveBeenCalledWith(
+      expect.stringContaining('failed_login_attempts'),
+      [3, false, '15', 'uid-1']
+    );
   });
 });
 

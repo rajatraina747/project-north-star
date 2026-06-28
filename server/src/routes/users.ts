@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import db from '../db';
+import { config } from '../utils/config';
 import { logger } from '../utils/logger';
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth';
 import { User } from '../types';
@@ -15,7 +16,6 @@ router.use(requireAdmin);
 const PUBLIC_COLUMNS =
   'id, username, email, display_name, is_admin, is_active, disabled_at, created_at, updated_at';
 
-const BCRYPT_ROUNDS = 10;
 const MIN_PASSWORD_LENGTH = 6;
 
 /**
@@ -70,7 +70,7 @@ router.post('/', async (req: AuthRequest, res) => {
       return;
     }
 
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const passwordHash = await bcrypt.hash(password, config.bcryptRounds);
 
     const user = await db.one(
       `INSERT INTO users (username, email, password_hash, display_name, is_admin)
@@ -111,7 +111,7 @@ router.patch('/:id', async (req: AuthRequest, res) => {
     }
 
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: (string | number | boolean | Date | null)[] = [];
     let i = 1;
 
     if (display_name !== undefined) {
@@ -165,7 +165,7 @@ router.post('/:id/reset-password', async (req: AuthRequest, res) => {
       return;
     }
 
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const passwordHash = await bcrypt.hash(password, config.bcryptRounds);
     await db.none(
       'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
       [passwordHash, id]
