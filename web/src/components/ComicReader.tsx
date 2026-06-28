@@ -19,12 +19,22 @@ const MIME_BY_EXT: Record<string, string> = {
 };
 
 type Fit = 'width' | 'height';
+type Mode = 'single' | 'double' | 'continuous';
+type Dir = 'ltr' | 'rtl';
+
+// How many upcoming pages to decode ahead so turns don't flash.
+const PREFETCH_AHEAD = 3;
+
+function persisted<T extends string>(key: string, fallback: T): T {
+  return (localStorage.getItem(key) as T) || fallback;
+}
 
 /**
- * Image-based reader for CBZ comics. A CBZ is just a ZIP of page images, so we
- * download the file, unzip it client-side (fflate), and page through the images.
- * Progress is tracked by page using the same reading_progress row as the other
- * readers (pdf_page + progress_percent).
+ * Image-based reader for CBZ comics. A CBZ is a ZIP of page images: we download
+ * the file, unzip it client-side (fflate), and page through the images. Supports
+ * single page, double-page spreads, and continuous (webtoon) scrolling, plus
+ * left-to-right or right-to-left (manga) reading direction. Progress is tracked
+ * by page in the shared reading_progress row (pdf_page + progress_percent).
  */
 export default function ComicReader({ bookId, fileId, fileUrl, title }: ComicReaderProps) {
   const navigate = useNavigate();
@@ -32,10 +42,13 @@ export default function ComicReader({ bookId, fileId, fileUrl, title }: ComicRea
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [fit, setFit] = useState<Fit>(() => (localStorage.getItem('comic-fit') as Fit) || 'height');
+  const [fit, setFit] = useState<Fit>(() => persisted<Fit>('comic-fit', 'height'));
+  const [mode, setMode] = useState<Mode>(() => persisted<Mode>('comic-mode', 'single'));
+  const [dir, setDir] = useState<Dir>(() => persisted<Dir>('comic-dir', 'ltr'));
   const objectUrls = useRef<string[]>([]);
   const initialPageRef = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Load + unzip the CBZ, and fetch any saved page so we can resume.
   useEffect(() => {
@@ -78,9 +91,9 @@ export default function ComicReader({ bookId, fileId, fileUrl, title }: ComicRea
         setPages(urls);
         setIndex(Math.min(initialPageRef.current, urls.length - 1));
         setLoading(false);
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (!cancelled) {
-          setError(e.message || 'Failed to open comic');
+          setError(e instanceof Error ? e.message : 'Failed to open comic');
           setLoading(false);
         }
       }
@@ -107,28 +120,92 @@ export default function ComicReader({ bookId, fileId, fileUrl, title }: ComicRea
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [index, pages.length, loading, bookId, fileId]);
 
-  const go = useCallback(
-    (delta: number) => setIndex((i) => Math.max(0, Math.min(pages.length - 1, i + delta))),
-    [pages.length]
+  // Decode upcoming pages ahead of time so turns are instant.
+  useEffect(() => {
+    if (pages.length === 0) return;
+    for (let i = 1; i <= PREFETCH_AHEAD; i++) {
+      const url = pages[index + i];
+      if (url) { const img = new Image(); img.src = url; }
+    }
+  }, [index, pages]);
+
+  const step = mode === 'double' ? 2 : 1;
+
+  // Semantic navigation (independent of reading direction).
+  const goNext = useCallback(
+    () => setIndex((i) => Math.min(pages.length - 1, i + step)),
+    [pages.length, step]
+  );
+  const goPrev = useCallback(
+    () => setIndex((i) => Math.max(0, i - step)),
+    [step]
   );
 
+  // Keyboard: arrows respect reading direction; space/PageDown always advance.
   useEffect(() => {
+    if (mode === 'continuous') {
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') navigate(-1); };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { go(1); e.preventDefault(); }
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { go(-1); e.preventDefault(); }
+      const forwardKeys = dir === 'rtl' ? ['ArrowLeft'] : ['ArrowRight'];
+      const backKeys = dir === 'rtl' ? ['ArrowRight'] : ['ArrowLeft'];
+      if (forwardKeys.includes(e.key) || e.key === 'ArrowDown' || e.key === ' ') { goNext(); e.preventDefault(); }
+      else if (backKeys.includes(e.key) || e.key === 'ArrowUp') { goPrev(); e.preventDefault(); }
       else if (e.key === 'Escape') navigate(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [go, navigate]);
+  }, [goNext, goPrev, navigate, dir, mode]);
 
-  const toggleFit = () => {
-    setFit((f) => {
-      const next = f === 'width' ? 'height' : 'width';
-      localStorage.setItem('comic-fit', next);
-      return next;
-    });
+  // Entering continuous mode: jump to the current page so resume/position holds.
+  useEffect(() => {
+    if (mode !== 'continuous' || loading) return;
+    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`);
+    if (el) el.scrollIntoView({ block: 'start' });
+    // Run only when entering continuous mode, not on every page change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, loading]);
+
+  // Continuous mode: track the most-visible page to keep progress in sync.
+  useEffect(() => {
+    if (mode !== 'continuous' || loading || pages.length === 0) return;
+    const root = scrollRef.current;
+    if (!root) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+            const i = Number((entry.target as HTMLElement).dataset.index);
+            if (Number.isFinite(i)) setIndex(i);
+          }
+        }
+      },
+      { root, threshold: [0.5] }
+    );
+    root.querySelectorAll('[data-index]').forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [mode, loading, pages.length]);
+
+  const cyclePref = <T extends string>(
+    value: T, order: readonly T[], setter: (v: T) => void, key: string
+  ) => {
+    const next = order[(order.indexOf(value) + 1) % order.length];
+    localStorage.setItem(key, next);
+    setter(next);
   };
+
+  const toggleFit = () => cyclePref(fit, ['height', 'width'] as const, setFit, 'comic-fit');
+  const cycleMode = () => {
+    const order = ['single', 'double', 'continuous'] as const;
+    const next = order[(order.indexOf(mode) + 1) % order.length];
+    // Snap to an even page when entering double-page mode so spreads stay aligned.
+    if (next === 'double') setIndex((i) => i - (i % 2));
+    localStorage.setItem('comic-mode', next);
+    setMode(next);
+  };
+  const toggleDir = () => cyclePref(dir, ['ltr', 'rtl'] as const, setDir, 'comic-dir');
 
   if (loading) {
     return (
@@ -154,6 +231,9 @@ export default function ComicReader({ bookId, fileId, fileUrl, title }: ComicRea
     );
   }
 
+  const modeLabel = mode === 'single' ? 'Single' : mode === 'double' ? 'Double' : 'Scroll';
+  const secondIndex = index + 1 < pages.length ? index + 1 : null;
+
   return (
     <div className="h-screen flex flex-col bg-ink-900">
       {/* Top bar */}
@@ -164,34 +244,67 @@ export default function ComicReader({ bookId, fileId, fileUrl, title }: ComicRea
           </svg>
         </button>
         <p className="text-sm font-medium truncate px-3">{title}</p>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <span className="text-xs text-cream/60 tabular-nums">{index + 1} / {pages.length}</span>
-          <button onClick={toggleFit} className="px-2.5 py-1 text-xs bg-ink-700 hover:bg-ink-600 rounded-lg" title="Toggle fit">
-            Fit {fit === 'width' ? 'Width' : 'Height'}
+          <button onClick={cycleMode} className="px-2.5 py-1 text-xs bg-ink-700 hover:bg-ink-600 rounded-lg" title="Layout (single / double / scroll)">
+            {modeLabel}
           </button>
+          <button onClick={toggleDir} className="px-2.5 py-1 text-xs bg-ink-700 hover:bg-ink-600 rounded-lg" title="Reading direction">
+            {dir === 'rtl' ? 'RTL' : 'LTR'}
+          </button>
+          {mode !== 'continuous' && (
+            <button onClick={toggleFit} className="px-2.5 py-1 text-xs bg-ink-700 hover:bg-ink-600 rounded-lg" title="Toggle fit">
+              Fit {fit === 'width' ? 'Width' : 'Height'}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Page viewport */}
-      <div className="flex-1 overflow-auto flex items-start justify-center relative">
-        {/* Click zones for prev/next */}
-        <button
-          className="absolute left-0 top-0 h-full w-1/3 cursor-w-resize z-10"
-          onClick={() => go(-1)}
-          aria-label="Previous page"
-        />
-        <button
-          className="absolute right-0 top-0 h-full w-1/3 cursor-e-resize z-10"
-          onClick={() => go(1)}
-          aria-label="Next page"
-        />
-        <img
-          src={pages[index]}
-          alt={`Page ${index + 1}`}
-          className={fit === 'width' ? 'w-full max-w-none' : 'h-full max-h-[calc(100vh-3rem)] w-auto mx-auto'}
-          style={fit === 'width' ? {} : { objectFit: 'contain' }}
-        />
-      </div>
+      {mode === 'continuous' ? (
+        <div ref={scrollRef} className="flex-1 overflow-auto flex flex-col items-center gap-2 py-2">
+          {pages.map((src, i) => (
+            <img
+              key={src}
+              data-index={i}
+              src={src}
+              loading="lazy"
+              alt={`Page ${i + 1}`}
+              className="w-full max-w-[900px]"
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto flex items-start justify-center relative">
+          {/* Click zones: forward/back swap with reading direction. */}
+          <button
+            className="absolute left-0 top-0 h-full w-1/3 z-10"
+            style={{ cursor: dir === 'rtl' ? 'e-resize' : 'w-resize' }}
+            onClick={dir === 'rtl' ? goNext : goPrev}
+            aria-label={dir === 'rtl' ? 'Next page' : 'Previous page'}
+          />
+          <button
+            className="absolute right-0 top-0 h-full w-1/3 z-10"
+            style={{ cursor: dir === 'rtl' ? 'w-resize' : 'e-resize' }}
+            onClick={dir === 'rtl' ? goPrev : goNext}
+            aria-label={dir === 'rtl' ? 'Previous page' : 'Next page'}
+          />
+
+          {mode === 'double' && secondIndex !== null ? (
+            <div className={`flex h-full ${dir === 'rtl' ? 'flex-row-reverse' : 'flex-row'} items-start justify-center`}>
+              <img src={pages[index]} alt={`Page ${index + 1}`} className="h-full max-h-[calc(100vh-3rem)] w-auto object-contain" />
+              <img src={pages[secondIndex]} alt={`Page ${secondIndex + 1}`} className="h-full max-h-[calc(100vh-3rem)] w-auto object-contain" />
+            </div>
+          ) : (
+            <img
+              src={pages[index]}
+              alt={`Page ${index + 1}`}
+              className={fit === 'width' ? 'w-full max-w-none' : 'h-full max-h-[calc(100vh-3rem)] w-auto mx-auto'}
+              style={fit === 'width' ? {} : { objectFit: 'contain' }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -21,6 +21,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Account lockout after repeated failed logins (configurable threshold/window).
 - Reading insights: longest streak and reading pace (pages/hour) on the Stats
   page.
+- Comic (CBZ) reader: double-page spreads, continuous (webtoon) scrolling,
+  right-to-left (manga) reading direction, and image prefetch; preferences
+  persist across sessions.
 - ESLint configuration for the server; CI lint step is now meaningful.
 - Test suites for the scanner, metadata enricher, dedupe report, migrations,
   file tickets, streaks, metrics, and account lockout.
