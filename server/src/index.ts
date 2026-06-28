@@ -5,6 +5,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { config, validateConfig } from './utils/config';
 import { logger } from './utils/logger';
+import { metricsMiddleware, metricsHandler } from './utils/metrics';
 import { testConnection } from './db';
 import authRoutes from './routes/auth';
 import booksRoutes from './routes/books';
@@ -85,10 +86,17 @@ async function startServer() {
       next();
     });
 
+    // Per-request metrics (count + latency). Registered before the routes so it
+    // observes all of them.
+    app.use(metricsMiddleware);
+
     // Health check
     app.get('/health', (req, res) => {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
     });
+
+    // Prometheus metrics endpoint (scrape target for Prometheus/Grafana).
+    app.get('/metrics', metricsHandler);
 
     // API Routes
     app.use('/api/auth', authLimiter, authRoutes);
@@ -104,7 +112,7 @@ async function startServer() {
     app.use('/api/shelf', shelfRoutes);
 
     // Error handler — never expose internal error details to clients in production.
-    app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    app.use((err: Error & { status?: number }, req: express.Request, res: express.Response, _next: express.NextFunction) => {
       logger.error('Error:', err);
       const status = err.status || 500;
       const message = config.nodeEnv === 'production' && status === 500
