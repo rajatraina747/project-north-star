@@ -1,6 +1,6 @@
 {
   "name": "northstar-server",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "North Star API Server and Worker Service",
   "main": "dist/index.js",
   "scripts": {

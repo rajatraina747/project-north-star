@@ -25,7 +25,10 @@ North Star is a self-hosted library for EPUB and PDF books — think Plex, but f
 
 ## Screenshots
 
-*Coming soon — add screenshots of your deployed instance here.*
+<!-- TODO: No screenshot image files exist in the repo yet. Add real screenshots
+     of your deployed instance here (e.g. ![Library](docs/screenshots/library.png))
+     once they exist. Do not link images that have not been committed. -->
+*Screenshots will be added here.*
 
 ---
 
@@ -232,7 +235,6 @@ See [`.env.example`](.env.example) for the full list.
 
 ## Known Limitations
 
-- **No PDF cover extraction.** PDFs only get a cover when one comes back from Google Books or Open Library. Rendering the first page to an image requires a native renderer that isn't bundled yet; EPUB covers (embedded) work fine.
 - **EPUB/CBZ readers buffer the whole file (client-side).** PDFs now stream — pdf.js fetches byte ranges over a short-lived signed URL, so large scanned PDFs no longer load fully into memory. EPUB and CBZ are ZIP containers that epub.js/the comic reader still load wholesale; range streaming doesn't help them without a server-side zip-entry API.
 
 ---
