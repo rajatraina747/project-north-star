@@ -227,8 +227,7 @@ See [`.env.example`](.env.example) for the full list.
 ## Known Limitations
 
 - **No PDF cover extraction.** PDFs only get a cover when one comes back from Google Books or Open Library. Rendering the first page to an image requires a native renderer that isn't bundled yet; EPUB covers (embedded) work fine.
-- **Readers fetch the whole file.** epubjs and pdf.js pull the entire file into memory before rendering. Fine for typical books, a bit heavy for 500-page scanned PDFs.
-- **Single migration script.** `schema.sql` is idempotent and safe to re-run, but there's no incremental migration history yet.
+- **EPUB/CBZ readers buffer the whole file (client-side).** PDFs now stream — pdf.js fetches byte ranges over a short-lived signed URL, so large scanned PDFs no longer load fully into memory. EPUB and CBZ are ZIP containers that epub.js/the comic reader still load wholesale; range streaming doesn't help them without a server-side zip-entry API.
 
 ---
 
