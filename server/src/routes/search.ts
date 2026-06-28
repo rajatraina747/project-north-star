@@ -4,6 +4,15 @@ import { logger } from '../utils/logger';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { SearchRequest, SearchResponse, Book } from '../types';
 import { attachListDetails } from './books';
+import {
+  resolveSort,
+  orderByClause,
+  cursorKeySelect,
+  keysetClause,
+  decodeCursor,
+  paginate,
+  WithCursorKey,
+} from '../utils/cursor';
 
 const router = Router();
 
@@ -15,6 +24,8 @@ router.post('/', async (req: AuthRequest, res) => {
   try {
     const searchReq = req.body as SearchRequest;
     const { query, filters, sort = 'title', limit = 50, offset = 0 } = searchReq;
+    const cursor = decodeCursor(searchReq.cursor);
+    const spec = resolveSort(sort, 'title');
 
     const whereConditions: string[] = [];
     const params: (string | number | string[])[] = [];
@@ -83,41 +94,55 @@ router.post('/', async (req: AuthRequest, res) => {
       paramIndex++;
     }
 
-    const whereClause = whereConditions.length > 0
+    // Count reflects the full filtered set (no keyset/limit), so compute it from
+    // the filter-only WHERE before appending any pagination predicate.
+    const countWhere = whereConditions.length > 0
       ? `WHERE ${whereConditions.join(' AND ')}`
       : '';
-
-    // Determine order
-    let orderBy = 'b.sort_title ASC';
-    if (sort === 'recent') {
-      orderBy = 'b.created_at DESC';
-    } else if (sort === 'added') {
-      orderBy = 'b.created_at DESC';
-    } else if (sort === 'author') {
-      orderBy = '(SELECT MIN(a.sort_name) FROM authors a INNER JOIN book_authors ba ON a.id = ba.author_id WHERE ba.book_id = b.id) ASC';
-    }
-
-    // Get books
-    const books = await db.manyOrNone<Book>(
-      `SELECT DISTINCT b.* FROM books b
-       ${whereClause}
-       ORDER BY ${orderBy}
-       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...params, limit, offset]
-    );
-
-    // Get total count
     const totalResult = await db.one<{ count: number }>(
       `SELECT COUNT(DISTINCT b.id) as count FROM books b
-       ${whereClause}`,
+       ${countWhere}`,
       params
     );
 
+    // Page query: when a cursor is supplied, seek past it with keyset semantics;
+    // otherwise fall back to OFFSET so existing offset-based callers still work.
+    const pageParams: (string | number | string[])[] = [...params];
+    if (cursor) {
+      const { clause, values } = keysetClause(spec, cursor, paramIndex);
+      whereConditions.push(clause);
+      pageParams.push(...values);
+      paramIndex += 2;
+    }
+    const pageWhere = whereConditions.length > 0
+      ? `WHERE ${whereConditions.join(' AND ')}`
+      : '';
+
+    // Fetch limit + 1 to detect whether another page exists.
+    const limitParam = paramIndex;
+    pageParams.push(limit + 1);
+    let tail = `LIMIT $${limitParam}`;
+    if (!cursor && offset > 0) {
+      pageParams.push(offset);
+      tail += ` OFFSET $${limitParam + 1}`;
+    }
+
+    const rows = await db.manyOrNone<WithCursorKey<Book>>(
+      `SELECT DISTINCT b.*, ${cursorKeySelect(spec)} FROM books b
+       ${pageWhere}
+       ORDER BY ${orderByClause(spec)}
+       ${tail}`,
+      pageParams
+    );
+
+    const { page, nextCursor } = paginate(rows || [], limit);
+
     const response: SearchResponse = {
-      books: (await attachListDetails(books || [])) as unknown as SearchResponse['books'],
+      books: (await attachListDetails(page)) as unknown as SearchResponse['books'],
       total: parseInt(totalResult.count.toString()),
       limit,
       offset,
+      nextCursor,
     };
 
     res.json(response);

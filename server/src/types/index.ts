@@ -262,6 +262,9 @@ export interface SearchRequest {
   sort?: 'title' | 'author' | 'recent' | 'added';
   limit?: number;
   offset?: number;
+  // Opaque keyset cursor from a previous response's `nextCursor`. When present,
+  // pagination seeks past the cursor row and `offset` is ignored.
+  cursor?: string;
 }
 
 export interface SearchResponse {
@@ -269,6 +272,8 @@ export interface SearchResponse {
   total: number;
   limit: number;
   offset: number;
+  // Token to fetch the next page, or null when the last page has been returned.
+  nextCursor: string | null;
 }
 
 export interface UpdateBookRequest {

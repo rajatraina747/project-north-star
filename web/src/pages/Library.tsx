@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { search as searchApi, library, shelf as shelfApi } from '../lib/api';
 import type { SearchParams } from '../lib/api';
@@ -7,6 +7,7 @@ import type { ShelfStatus, BookFormat } from '../types';
 import BookCard from '../components/BookCard';
 import BookListItem from '../components/BookListItem';
 
+const PAGE_SIZE = 60;
 const FORMAT_OPTIONS: BookFormat[] = ['EPUB', 'PDF', 'CBZ', 'MOBI', 'AZW3'];
 const SHELF_OPTIONS: { value: ShelfStatus; label: string }[] = [
   { value: 'WANT_TO_READ', label: 'Want to Read' },
@@ -66,9 +67,13 @@ export default function Library() {
     queryFn: () => library.tags(),
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['books', searchQuery, sortBy, selectedAuthor, selectedSeries, selectedTags, selectedFormats, selectedLanguage],
-    queryFn: async () => {
+    // Don't fetch the paginated library list while a shelf is selected — that
+    // view is served by the dedicated shelf endpoint below.
+    enabled: !selectedShelf,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }) => {
       const filters: SearchParams['filters'] = {};
       if (selectedAuthor) filters.authors = [selectedAuthor];
       if (selectedSeries) filters.series = [selectedSeries];
@@ -80,11 +85,12 @@ export default function Library() {
         query: searchQuery || '',
         filters: Object.keys(filters).length > 0 ? filters : undefined,
         sort: sortBy,
-        limit: 100,
-        offset: 0,
+        limit: PAGE_SIZE,
+        cursor: pageParam,
       });
       return response.data;
     },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 
   // Shelf filtering is per-user and served by a dedicated endpoint, so when a
@@ -96,14 +102,34 @@ export default function Library() {
     enabled: !!selectedShelf,
   });
 
-  let books = data?.books || [];
+  const fetchedBooks = data?.pages.flatMap((p) => p.books) ?? [];
+  let books = fetchedBooks;
   if (selectedShelf) {
     const q = searchQuery.trim().toLowerCase();
     books = (shelfData || []).filter(
       (b) => !q || b.title.toLowerCase().includes(q) || (b.authors || []).some((a) => a.name.toLowerCase().includes(q))
     );
   }
-  const total = selectedShelf ? books.length : (data?.total ?? books.length);
+  const total = selectedShelf ? books.length : (data?.pages[0]?.total ?? books.length);
+
+  // Infinite scroll: load the next page when a sentinel near the list end
+  // scrolls into view. Disabled while a shelf is selected (that list isn't
+  // paginated). The observer re-binds when paging capability changes.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || selectedShelf || !hasNextPage) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: '600px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [selectedShelf, hasNextPage, isFetchingNextPage, fetchNextPage]);
   const authors = authorsData?.data || [];
   const seriesList = seriesData?.data || [];
   const tags = tagsData?.data || [];
@@ -425,6 +451,15 @@ export default function Library() {
             {books.map((book) => (
               <BookListItem key={book.id} book={book} />
             ))}
+          </div>
+        )}
+
+        {/* Infinite-scroll sentinel + loading indicator (library list only) */}
+        {!selectedShelf && books.length > 0 && (
+          <div ref={sentinelRef} className="py-8 flex justify-center">
+            {isFetchingNextPage && (
+              <span className="text-sm text-ink-400">Loading more…</span>
+            )}
           </div>
         )}
       </div>

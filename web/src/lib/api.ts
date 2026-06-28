@@ -73,8 +73,8 @@ export interface BookWithProgress {
 }
 
 export const books = {
-  getAll: (params?: { limit?: number; offset?: number; sort?: string }) =>
-    api.get<{ books: Book[]; total: number }>('/books', { params }),
+  getAll: (params?: { limit?: number; offset?: number; sort?: string; cursor?: string }) =>
+    api.get<PageResponse<Book>>('/books', { params }),
   getRecent: (limit = 20) => api.get<Book[]>('/books/recent', { params: { limit } }),
   getContinueReading: (limit = 20) => api.get<BookWithProgress[]>('/books/continue', { params: { limit } }),
   getById: (id: string) => api.get<BookWithDetails>(`/books/${id}`),
@@ -142,11 +142,19 @@ export interface SearchParams {
   sort?: 'title' | 'author' | 'recent' | 'added';
   limit?: number;
   offset?: number;
+  // Opaque keyset cursor from a previous response's `nextCursor`.
+  cursor?: string;
+}
+
+export interface PageResponse<T> {
+  books: T[];
+  total: number;
+  nextCursor: string | null;
 }
 
 export const search = {
   search: (params: SearchParams) =>
-    api.post<{ books: Book[]; total: number }>('/search', { query: '', ...params }),
+    api.post<PageResponse<Book>>('/search', { query: '', ...params }),
   quick: (q: string) => api.get<Book[]>('/search/quick', { params: { q } }),
 };
 

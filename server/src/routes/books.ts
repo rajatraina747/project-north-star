@@ -11,6 +11,15 @@ import { Book, BookWithDetails, Author, Series, Tag, BookFile, UpdateBookRequest
 import { buildSeriesContext } from '../services/series';
 import { MetadataEnricher } from '../services/metadata-enricher';
 import { CoverGenerator } from '../services/cover-generator';
+import {
+  resolveSort,
+  orderByClause,
+  cursorKeySelect,
+  keysetClause,
+  decodeCursor,
+  paginate,
+  WithCursorKey,
+} from '../utils/cursor';
 
 const router = Router();
 
@@ -279,30 +288,46 @@ router.get('/', async (req: AuthRequest, res) => {
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = parseInt(req.query.offset as string) || 0;
     const sort = req.query.sort as string || 'title';
+    const cursor = decodeCursor(req.query.cursor as string | undefined);
+    const spec = resolveSort(sort, 'title');
 
-    let orderBy = 'b.sort_title ASC';
-    if (sort === 'recent') {
-      orderBy = 'b.created_at DESC';
-    } else if (sort === 'updated') {
-      orderBy = 'b.updated_at DESC';
+    // Keyset when a cursor is given, OFFSET otherwise (backward compatible).
+    const params: (string | number)[] = [];
+    let where = '';
+    if (cursor) {
+      const { clause, values } = keysetClause(spec, cursor, 1);
+      where = `WHERE ${clause}`;
+      params.push(...values);
     }
 
-    const books = await db.manyOrNone<Book>(
-      `SELECT b.* FROM books b
-       ORDER BY ${orderBy}
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
+    const limitParam = params.length + 1;
+    params.push(limit + 1); // fetch one extra to detect a further page
+    let tail = `LIMIT $${limitParam}`;
+    if (!cursor && offset > 0) {
+      params.push(offset);
+      tail += ` OFFSET $${limitParam + 1}`;
+    }
+
+    const rows = await db.manyOrNone<WithCursorKey<Book>>(
+      `SELECT b.*, ${cursorKeySelect(spec)} FROM books b
+       ${where}
+       ORDER BY ${orderByClause(spec)}
+       ${tail}`,
+      params
     );
+
+    const { page, nextCursor } = paginate(rows || [], limit);
 
     const total = await db.one<{ count: number }>(
       'SELECT COUNT(*) as count FROM books'
     );
 
     res.json({
-      books: await attachListDetails(books),
+      books: await attachListDetails(page),
       total: parseInt(total.count.toString()),
       limit,
       offset,
+      nextCursor,
     });
   } catch (error) {
     logger.error('Get books error:', error);
