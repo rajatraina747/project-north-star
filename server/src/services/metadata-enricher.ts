@@ -81,7 +81,7 @@ export class MetadataEnricher {
       }
 
       const url = 'https://www.googleapis.com/books/v1/volumes';
-      const params: any = { q: query, maxResults: 1 };
+      const params: Record<string, string | number> = { q: query, maxResults: 1 };
 
       if (this.googleBooksApiKey) {
         params.key = this.googleBooksApiKey;
@@ -110,8 +110,8 @@ export class MetadataEnricher {
         categories: volumeInfo.categories,
         language: volumeInfo.language,
         imageLinks: volumeInfo.imageLinks,
-        isbn_10: volumeInfo.industryIdentifiers?.find((id: any) => id.type === 'ISBN_10')?.identifier,
-        isbn_13: volumeInfo.industryIdentifiers?.find((id: any) => id.type === 'ISBN_13')?.identifier,
+        isbn_10: volumeInfo.industryIdentifiers?.find((id: { type: string; identifier: string }) => id.type === 'ISBN_10')?.identifier,
+        isbn_13: volumeInfo.industryIdentifiers?.find((id: { type: string; identifier: string }) => id.type === 'ISBN_13')?.identifier,
       };
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 429) {
@@ -174,12 +174,12 @@ export class MetadataEnricher {
       return {
         title: book.title,
         authors: book.authors || [],
-        publishers: book.publishers?.map((p: any) => p.name),
+        publishers: book.publishers?.map((p: { name: string }) => p.name),
         publish_date: book.publish_date,
         number_of_pages: book.number_of_pages,
         isbn_10: book.identifiers?.isbn_10?.[0],
         isbn_13: book.identifiers?.isbn_13?.[0],
-        subjects: book.subjects?.map((s: any) => s.name).slice(0, 10),
+        subjects: book.subjects?.map((s: { name: string }) => s.name).slice(0, 10),
         covers: book.cover ? [book.cover.large, book.cover.medium, book.cover.small].filter(Boolean) : undefined,
       };
     } catch (error) {
@@ -271,7 +271,7 @@ export class MetadataEnricher {
 
     Object.entries(enrichment).forEach(([key, value]) => {
       if (value && (!merged[key as keyof ExtractedMetadata] || merged[key as keyof ExtractedMetadata] === '')) {
-        (merged as any)[key] = value;
+        (merged as Record<string, unknown>)[key] = value;
       }
     });
 

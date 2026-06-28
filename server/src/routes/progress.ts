@@ -34,7 +34,7 @@ router.get('/:bookId/:fileId', async (req: AuthRequest, res) => {
 
     res.json({
       ...progress,
-      progress_percent: parseFloat(progress.progress_percent as any) || 0,
+      progress_percent: Number(progress.progress_percent) || 0,
     });
   } catch (error) {
     logger.error('Get progress error:', error);
@@ -83,7 +83,7 @@ router.put('/:bookId/:fileId', async (req: AuthRequest, res) => {
 
     res.json({
       ...progress,
-      progress_percent: parseFloat(progress.progress_percent as any) || 0,
+      progress_percent: Number(progress.progress_percent) || 0,
     });
   } catch (error) {
     logger.error('Update progress error:', error);
@@ -134,7 +134,7 @@ router.put('/:bookId/:fileId/finish', async (req: AuthRequest, res) => {
 
     res.json({
       ...progress,
-      progress_percent: parseFloat(progress.progress_percent as any) || 0,
+      progress_percent: Number(progress.progress_percent) || 0,
     });
   } catch (error) {
     logger.error('Mark finished error:', error);
@@ -156,7 +156,7 @@ router.get('/', async (req: AuthRequest, res) => {
 
     const formattedProgress = (progress || []).map(p => ({
       ...p,
-      progress_percent: parseFloat(p.progress_percent as any) || 0,
+      progress_percent: Number(p.progress_percent) || 0,
     }));
 
     res.json(formattedProgress);

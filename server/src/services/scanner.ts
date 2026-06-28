@@ -175,7 +175,7 @@ export class LibraryScanner {
   ): Promise<void> {
     try {
       const sets: string[] = ['progress_updated_at = CURRENT_TIMESTAMP'];
-      const values: any[] = [];
+      const values: (string | number | null)[] = [];
       let i = 1;
       if (p.phase !== undefined) { sets.push(`current_phase = $${i++}`); values.push(p.phase); }
       if (p.file !== undefined) { sets.push(`current_file = $${i++}`); values.push(p.file); }

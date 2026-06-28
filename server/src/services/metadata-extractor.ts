@@ -31,7 +31,7 @@ export class MetadataExtractor {
    */
   private async extractEpubMetadata(filePath: string): Promise<ExtractedMetadata> {
     try {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve, _reject) => {
         const epub = new EPub(filePath);
 
         epub.on('error', (err) => {

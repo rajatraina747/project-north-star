@@ -21,10 +21,33 @@ export interface ProviderSeriesResult {
   notes?: string;
 }
 
-function extractIsbn(volumeInfo: any): { isbn13: string | null; isbn10: string | null } {
+interface GoogleVolumeInfo {
+  title?: string;
+  subtitle?: string;
+  description?: string;
+  publishedDate?: string;
+  authors?: string[];
+  industryIdentifiers?: { type: string; identifier: string }[];
+  imageLinks?: { thumbnail?: string; smallThumbnail?: string };
+}
+interface GoogleVolume {
+  id: string;
+  volumeInfo?: GoogleVolumeInfo;
+}
+interface OpenLibraryDoc {
+  key?: string;
+  title?: string;
+  series_position?: string;
+  isbn?: string[];
+  cover_i?: number;
+  first_publish_year?: number;
+  author_name?: string[];
+}
+
+function extractIsbn(volumeInfo: GoogleVolumeInfo): { isbn13: string | null; isbn10: string | null } {
   const identifiers = volumeInfo?.industryIdentifiers || [];
-  const isbn13 = identifiers.find((id: any) => id.type === 'ISBN_13')?.identifier || null;
-  const isbn10 = identifiers.find((id: any) => id.type === 'ISBN_10')?.identifier || null;
+  const isbn13 = identifiers.find((id) => id.type === 'ISBN_13')?.identifier || null;
+  const isbn10 = identifiers.find((id) => id.type === 'ISBN_10')?.identifier || null;
   return { isbn13, isbn10 };
 }
 
@@ -51,7 +74,7 @@ function normalizeSeriesName(input: string): string {
   return input.replace(/\s+/g, ' ').trim();
 }
 
-function pickCoverUrl(volumeInfo: any): string | null {
+function pickCoverUrl(volumeInfo: GoogleVolumeInfo): string | null {
   return volumeInfo?.imageLinks?.thumbnail || volumeInfo?.imageLinks?.smallThumbnail || null;
 }
 
@@ -104,7 +127,7 @@ export async function fetchGoogleSeriesByIsbn(isbn: string, apiKey?: string): Pr
       params: apiKey ? { q: searchQuery, key: apiKey } : { q: searchQuery },
     });
 
-    const entries: ProviderSeriesEntry[] = (searchResponse.data?.items || []).map((entry: any) => {
+    const entries: ProviderSeriesEntry[] = (searchResponse.data?.items || []).map((entry: GoogleVolume) => {
       const entryInfo = entry.volumeInfo || {};
       const match = parseSeriesPattern(entryInfo.title || '') || parseSeriesPattern(entryInfo.subtitle || '') || null;
       const { isbn13, isbn10 } = extractIsbn(entryInfo);
@@ -165,7 +188,7 @@ export async function fetchOpenLibrarySeriesByIsbn(isbn: string): Promise<Provid
     });
 
     const docs = searchResponse.data?.docs || [];
-    const entries: ProviderSeriesEntry[] = docs.map((doc: any) => {
+    const entries: ProviderSeriesEntry[] = docs.map((doc: OpenLibraryDoc) => {
       const seriesIndex = doc.series_position ? parseFloat(doc.series_position) : null;
       const isbn13 = doc.isbn?.find((code: string) => code.length === 13) || null;
       const isbn10 = doc.isbn?.find((code: string) => code.length === 10) || null;

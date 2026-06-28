@@ -141,7 +141,7 @@ router.get('/scans/:id/stream', async (req: AuthRequest, res) => {
   res.setHeader('Connection', 'keep-alive');
   // Disable proxy buffering (nginx) so events are delivered immediately.
   res.setHeader('X-Accel-Buffering', 'no');
-  (res as any).flushHeaders?.();
+  res.flushHeaders?.();
 
   let closed = false;
   const send = (event: string, data: unknown) => {
@@ -198,7 +198,7 @@ router.get('/scans/:id/stream', async (req: AuthRequest, res) => {
 router.get('/duplicates', async (_req: AuthRequest, res) => {
   try {
     // Exact-hash duplicates at the file level.
-    const exactHash = await db.manyOrNone<{ file_hash: string; files: any[] }>(
+    const exactHash = await db.manyOrNone<{ file_hash: string; files: unknown[] }>(
       `SELECT bf.file_hash,
               json_agg(json_build_object(
                 'book_id', bf.book_id, 'title', b.title,

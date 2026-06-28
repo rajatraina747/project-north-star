@@ -171,7 +171,7 @@ export interface MetadataSource {
   source_type: MetadataSourceType;
   source_identifier: string | null;
   confidence_score: number | null;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   created_at: Date;
 }
 
@@ -222,7 +222,7 @@ export interface ScanHistory {
 
 export interface Setting {
   key: string;
-  value: any;
+  value: unknown;
   updated_at: Date;
 }
 

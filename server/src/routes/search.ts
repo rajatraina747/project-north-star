@@ -16,8 +16,8 @@ router.post('/', async (req: AuthRequest, res) => {
     const searchReq = req.body as SearchRequest;
     const { query, filters, sort = 'title', limit = 50, offset = 0 } = searchReq;
 
-    let whereConditions: string[] = [];
-    let params: any[] = [];
+    const whereConditions: string[] = [];
+    const params: (string | number | string[])[] = [];
     let paramIndex = 1;
 
     // Full-text search on title, author, description
@@ -114,7 +114,7 @@ router.post('/', async (req: AuthRequest, res) => {
     );
 
     const response: SearchResponse = {
-      books: (await attachListDetails(books || [])) as any,
+      books: (await attachListDetails(books || [])) as unknown as SearchResponse['books'],
       total: parseInt(totalResult.count.toString()),
       limit,
       offset,

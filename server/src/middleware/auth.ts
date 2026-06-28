@@ -32,8 +32,8 @@ async function selectAuthUserById(id: string): Promise<AuthUser | null> {
       );
       usersHaveIsActiveColumn = true;
       return u;
-    } catch (err: any) {
-      if (err?.code !== '42703') throw err;
+    } catch (err) {
+      if ((err as { code?: string })?.code !== '42703') throw err;
       usersHaveIsActiveColumn = false;
       logger.warn(
         'users.is_active column is missing — run database migrations (npm run migrate). ' +

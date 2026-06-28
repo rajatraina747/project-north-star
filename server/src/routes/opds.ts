@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
 import db from '../db';
@@ -6,7 +6,7 @@ import { logger } from '../utils/logger';
 import { config } from '../utils/config';
 import { authenticateOpds, AuthRequest } from '../middleware/auth';
 import { Book, Author, Series, Tag } from '../types';
-import { attachListDetails, resolveWithin } from './books';
+import { attachListDetails, resolveWithin, BookListItem } from './books';
 
 const router = Router();
 
@@ -26,7 +26,7 @@ function escapeXml(value: unknown): string {
     .replace(/'/g, '&apos;');
 }
 
-function sendFeed(res: any, type: string, xml: string) {
+function sendFeed(res: Response, type: string, xml: string) {
   res.setHeader('Content-Type', type);
   res.send('<?xml version="1.0" encoding="UTF-8"?>\n' + xml);
 }
@@ -63,15 +63,15 @@ ${entryXml}
 </feed>`;
 }
 
-function acquisitionFeed(id: string, title: string, self: string, books: any[]): string {
+function acquisitionFeed(id: string, title: string, self: string, books: BookListItem[]): string {
   const now = new Date().toISOString();
   const entryXml = books
     .map((b) => {
       const authors = (b.authors || [])
-        .map((a: any) => `    <author><name>${escapeXml(a.name)}</name></author>`)
+        .map((a) => `    <author><name>${escapeXml(a.name)}</name></author>`)
         .join('\n');
       const acqLinks = (b.files || [])
-        .map((f: any) => {
+        .map((f) => {
           const mime = f.format === 'EPUB' ? 'application/epub+zip' : 'application/pdf';
           return `    <link rel="http://opds-spec.org/acquisition" href="${ROOT}/download/${b.id}/${f.id}" type="${mime}" length="${f.file_size}"/>`;
         })
