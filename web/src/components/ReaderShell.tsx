@@ -107,6 +107,10 @@ export default function ReaderShell({
   const leftZoneRef = useRef<HTMLButtonElement>(null);
   const rightZoneRef = useRef<HTMLButtonElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const mainAreaRef = useRef<HTMLDivElement>(null);
+  // The control that opened the sidebar, so focus can return to it on close.
+  const sidebarTriggerRef = useRef<HTMLElement | null>(null);
 
   // In-book search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -252,6 +256,31 @@ export default function ReaderShell({
     return () => window.removeEventListener('resize', updateHudHeight);
   }, [hudVisible, progressPercent, progressLabel, leftStatus, onProgressSeek]);
 
+  // Focus management for the slide-in sidebar: move focus into the panel when it
+  // opens, return it to the trigger on close, and keep whichever region is
+  // inactive out of the tab order (so keyboard users can't tab into the
+  // off-screen panel, and Tab stays trapped in the open panel).
+  useEffect(() => {
+    const aside = sidebarRef.current;
+    const mainArea = mainAreaRef.current;
+    if (!aside) return;
+    // Capture the trigger before inert-ing its region (which would blur it).
+    if (sidebarOpen) {
+      sidebarTriggerRef.current = (document.activeElement as HTMLElement) ?? null;
+    }
+    aside.inert = !sidebarOpen;
+    if (mainArea) mainArea.inert = sidebarOpen;
+    if (sidebarOpen) {
+      const focusable = aside.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      focusable?.focus();
+    } else if (sidebarTriggerRef.current) {
+      sidebarTriggerRef.current.focus?.();
+      sidebarTriggerRef.current = null;
+    }
+  }, [sidebarOpen]);
+
   useEffect(() => {
     const media = window.matchMedia?.('(pointer: coarse)');
     if (!media) return;
@@ -376,6 +405,8 @@ export default function ReaderShell({
           )}
           {/* Sidebar — absolute so it stays within the reader container, not the viewport */}
           <aside
+            ref={sidebarRef}
+            aria-label="Reader navigation"
             className={`absolute left-0 top-0 h-full z-40 flex flex-col transition-transform duration-300 ease-soft shadow-warm-lg ${
               sidebarOpen ? 'translate-x-0' : '-translate-x-full'
             }`}
@@ -574,7 +605,7 @@ export default function ReaderShell({
       )}
 
       {/* Main reading area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div ref={mainAreaRef} className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
         <div className="sticky top-0 z-20 backdrop-blur-sm bg-parchment-100/80 border-b border-parchment-300">
           <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">

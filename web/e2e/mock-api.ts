@@ -53,6 +53,13 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
   // Catch-all so any unlisted GET resolves rather than erroring the page.
   await page.route('**/api/**', (r) => json(r, {}));
 
+  // Generic books list (PageResponse) + shelves. Registered early so the more
+  // specific /books/recent, /books/continue and /books/:id routes below win.
+  await page.route('**/api/books**', (r) =>
+    json(r, { books: [sampleBook], total: 1, nextCursor: null })
+  );
+  await page.route('**/api/shelf**', (r) => json(r, []));
+
   await page.route('**/api/auth/registration-status', (r) => json(r, { open: registrationOpen }));
   await page.route('**/api/auth/login', (r) => json(r, { token: TEST_TOKEN, user: TEST_USER }));
   await page.route('**/api/auth/register', (r) => json(r, { token: TEST_TOKEN, user: TEST_USER }));

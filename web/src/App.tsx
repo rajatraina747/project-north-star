@@ -51,8 +51,15 @@ function App() {
   return (
     <BrowserRouter>
       <div className="flex h-screen bg-parchment-50">
+        {/* Keyboard users can jump straight past the nav to the page content. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-3 focus:left-3 focus:px-4 focus:py-2 focus:rounded-lg focus:bg-ember-500 focus:text-cream focus:shadow-warm"
+        >
+          Skip to main content
+        </a>
         <Nav />
-        <main className="flex-1 overflow-auto">
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto">
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/library" element={<Library />} />

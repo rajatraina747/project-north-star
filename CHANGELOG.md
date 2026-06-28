@@ -34,6 +34,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   triggering a library scan, opening a book in the reader, and confirming
   reading progress persists across a reload. The backend is stubbed at the
   network boundary so the suite runs with no database or external services.
+- Accessibility: a "Skip to main content" link, a labelled primary navigation
+  landmark with `aria-current` on the active route, and focus management for the
+  reader's slide-in panel (focus moves into the panel on open, returns to the
+  trigger on close, and the inactive region is taken out of the tab order).
+  Automated axe-core checks run in the e2e suite against the login, home, and
+  reader screens.
 
 ### Changed
 - Series cache freshness (`isSeriesFresh`) now guards provider refreshes, with a

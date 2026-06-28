@@ -16,7 +16,7 @@ export default function Nav() {
   ];
 
   return (
-    <nav className="w-64 bg-parchment-100/80 backdrop-blur-sm border-r border-parchment-300 flex flex-col">
+    <nav aria-label="Primary" className="w-64 bg-parchment-100/80 backdrop-blur-sm border-r border-parchment-300 flex flex-col">
       {/* Logo */}
       <div className="px-6 py-7 border-b border-parchment-300">
         <Link to="/" className="flex items-center space-x-3">
@@ -43,6 +43,7 @@ export default function Nav() {
             <Link
               key={item.path}
               to={item.path}
+              aria-current={isActive ? 'page' : undefined}
               className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-all duration-250 ease-soft ${
                 isActive
                   ? 'bg-ember-500/12 text-ember-700 font-semibold'
