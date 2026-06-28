@@ -37,6 +37,9 @@ playwright-report/
 test-results/
 .playwright/
 
+# vite-plugin-pwa dev service worker output
+dev-dist/
+
 # Local data (for development)
 books/
 data/

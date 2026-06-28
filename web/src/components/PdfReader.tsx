@@ -7,6 +7,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 // the reader works offline / on isolated networks and complies with the CSP.
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import { progress as progressApi, bookmarks as bookmarksApi, books as booksApi } from '../lib/api';
+import { saveProgress as queueRemoteProgress } from '../lib/progressSync';
 import {
   getLocalProgress,
   pickLatestProgress,
@@ -254,8 +255,9 @@ export default function PdfReader({ bookId, fileId, title }: PdfReaderProps) {
   };
 
   const syncProgress = (page: number, percent: number) => {
-    progressApi.update(bookId, fileId, { pdf_page: page, progress_percent: percent })
-      .catch((err) => console.error('Failed to save progress:', err));
+    // Offline-aware: queues the update for replay if the request fails. (The PDF
+    // itself streams via range requests and isn't cached for offline reading.)
+    queueRemoteProgress(bookId, fileId, { pdf_page: page, progress_percent: percent });
   };
 
   const saveProgress = useRef(

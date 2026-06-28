@@ -29,6 +29,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   consumes it. No paid email provider is required — the link is logged via a
   pluggable delivery seam and can optionally be returned in the API response for
   headless setups. New reset UI on the login screen.
+- Progressive Web App / offline reading: a web app manifest and a service worker
+  (vite-plugin-pwa) precache the app shell so the UI loads offline. Opened EPUB
+  and CBZ books are cached in IndexedDB and remain readable with no network, and
+  reading-progress updates made while offline are queued and replayed when the
+  connection returns. (PDFs stream via range requests and aren't cached offline.)
 - In-book full-text search: the extracted text of EPUB/PDF books is indexed in a
   new `book_fulltext` table (Postgres full-text search, generated `tsvector` +
   GIN index — no external search service) and folded into the existing search

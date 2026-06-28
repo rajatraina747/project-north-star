@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { unzipSync } from 'fflate';
 import { progress as progressApi } from '../lib/api';
 import { getToken } from '../lib/auth';
+import { loadBookArrayBuffer } from '../lib/offline';
+import { saveProgress } from '../lib/progressSync';
 
 interface ComicReaderProps {
   bookId: string;
@@ -63,9 +65,9 @@ export default function ComicReader({ bookId, fileId, fileUrl, title }: ComicRea
         } catch { /* no saved progress */ }
 
         const token = getToken();
-        const res = await fetch(fileUrl, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-        if (!res.ok) throw new Error(`Failed to load comic (${res.status})`);
-        const buf = new Uint8Array(await res.arrayBuffer());
+        // Caches the archive for offline reading, or falls back to the cached
+        // copy when offline.
+        const buf = new Uint8Array(await loadBookArrayBuffer(bookId, fileId, fileUrl, token));
         if (cancelled) return;
 
         const entries = unzipSync(buf, {
@@ -113,9 +115,8 @@ export default function ComicReader({ bookId, fileId, fileUrl, title }: ComicRea
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       const percent = Math.round(((index + 1) / pages.length) * 100);
-      progressApi
-        .update(bookId, fileId, { progress_percent: percent, pdf_page: index + 1 })
-        .catch(() => undefined);
+      // Offline-aware: queues the update for replay if the request fails.
+      saveProgress(bookId, fileId, { progress_percent: percent, pdf_page: index + 1 });
     }, 800);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [index, pages.length, loading, bookId, fileId]);

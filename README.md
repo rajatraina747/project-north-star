@@ -18,6 +18,7 @@ North Star is a self-hosted library for EPUB and PDF books — think Plex, but f
 | 📚 **Scans your library** | Point it at a folder. It finds every EPUB and PDF, pulls metadata (title, author, ISBN, description, cover art) from the files themselves and from Google Books / Open Library, and keeps everything tidy. |
 | 📖 **Read in the browser** | Full EPUB reader (epubjs) and PDF reader (pdf.js) — no app to install, works on phones and tablets too. |
 | 🔖 **Remembers where you left off** | Reading progress is stored server-side and synced across every device. Pick up your book on your laptop where you stopped on your phone. |
+| 📴 **Works offline (PWA)** | Installable as an app; the shell and any EPUB/CBZ books you've opened are cached for offline reading, and progress made offline syncs when you reconnect. |
 | 🔒 **Yours alone** | JWT authentication, no telemetry, no external accounts. Everything stays on hardware you control. |
 
 ---

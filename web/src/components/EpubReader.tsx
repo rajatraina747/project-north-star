@@ -15,6 +15,8 @@ import ReaderSettingsPanel from './ReaderSettingsPanel';
 import { useReaderSettings, FONT_STACKS, READER_THEME_COLORS, type ReaderSettings } from '../lib/readerSettings';
 import { useReadingHeartbeat } from '../lib/readingHeartbeat';
 import { getToken } from '../lib/auth';
+import { loadBookArrayBuffer } from '../lib/offline';
+import { saveProgress } from '../lib/progressSync';
 
 // Build and apply the live typography/theme overrides to an epub.js rendition.
 // Uses !important so book-supplied CSS doesn't win over the reader's choices.
@@ -119,18 +121,9 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
     const loadBook = async () => {
       try {
         const token = getToken();
-        const response = await fetch(fileUrl, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to load book: ${response.status} ${response.statusText}`);
-        }
-
-        const blob = await response.blob();
-        const arrayBuffer = await blob.arrayBuffer();
+        // Loads from the network and caches the file for offline reading, or
+        // falls back to the cached copy when offline.
+        const arrayBuffer = await loadBookArrayBuffer(bookId, fileId, fileUrl, token);
 
         if (!mounted) return;
 
@@ -377,14 +370,8 @@ export default function EpubReader({ bookId, fileId, fileUrl, title }: EpubReade
   };
 
   const syncProgress = (cfi: string, percent: number) => {
-    const payload = {
-      epub_cfi: cfi,
-      progress_percent: percent,
-    };
-    progressApi.update(bookId, fileId, payload)
-      .catch((err) => {
-        console.error('Failed to save progress:', err);
-      });
+    // Offline-aware: queues the update for replay if the request fails.
+    saveProgress(bookId, fileId, { epub_cfi: cfi, progress_percent: percent });
   };
 
   const saveProgressDebounced = useRef(
