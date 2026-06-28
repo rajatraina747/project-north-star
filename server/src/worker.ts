@@ -8,7 +8,7 @@ import { MetadataExtractor } from './services/metadata-extractor';
 import { MetadataEnricher } from './services/metadata-enricher';
 import { CoverGenerator } from './services/cover-generator';
 import { refreshStaleSeries } from './services/series';
-import { ScanHistory, BookFormat } from './types';
+import { ScanHistory, BookFormat, ExtractedMetadata } from './types';
 
 class WorkerService {
   private scanner: LibraryScanner;
@@ -245,9 +245,28 @@ class WorkerService {
              WHERE id = $3`,
             [coverPaths.coverPath, coverPaths.thumbnailPath, bookId]
           );
+          coverGenerated = true;
           logger.info(`Generated cover from API image for book ${bookId}`);
         } catch (error) {
           logger.error(`Failed to generate cover from API image for book ${bookId}:`, error);
+        }
+      }
+
+      // Last resort for PDFs with no embedded/external cover: rasterize page 1.
+      if (!coverGenerated && format === 'PDF') {
+        try {
+          const coverPaths = await this.coverGenerator.extractFromPdf(fullPath, bookId);
+          if (coverPaths) {
+            await db.none(
+              `UPDATE books
+               SET cover_path = $1, thumbnail_path = $2
+               WHERE id = $3`,
+              [coverPaths.coverPath, coverPaths.thumbnailPath, bookId]
+            );
+            logger.info(`Generated cover by rasterizing PDF for book ${bookId}`);
+          }
+        } catch (error) {
+          logger.error(`Failed to rasterize PDF cover for book ${bookId}:`, error);
         }
       }
 
@@ -261,10 +280,10 @@ class WorkerService {
   /**
    * Update book with extracted/enriched metadata
    */
-  private async updateBookWithMetadata(bookId: string, metadata: any): Promise<void> {
+  private async updateBookWithMetadata(bookId: string, metadata: ExtractedMetadata): Promise<void> {
     try {
       const updates: string[] = [];
-      const values: any[] = [];
+      const values: unknown[] = [];
       let paramIndex = 1;
 
       if (metadata.title) {
