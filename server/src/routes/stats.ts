@@ -87,19 +87,23 @@ router.get('/summary', async (req: AuthRequest, res) => {
     );
 
     // Distinct active days, most recent first — used for streak calculation.
+    // Cast to text so Postgres returns ISO 'YYYY-MM-DD' strings directly; reading
+    // the raw DATE back through node-pg yields a JS Date at local midnight, whose
+    // string form ("Thu Jun 18 2026 …") would break the ISO key matching in
+    // computeStreaks (and shift days across the UTC boundary).
     const days = await db.manyOrNone<{ day: string }>(
-      `SELECT DISTINCT day FROM reading_sessions
+      `SELECT DISTINCT day::text AS day FROM reading_sessions
        WHERE user_id = $1 ORDER BY day DESC`,
       [userId]
     );
 
     // Current + longest streaks from the set of active days.
     const { current: streak, longest: longestStreak } = computeStreaks(
-      days.map((d) => String(d.day).slice(0, 10))
+      days.map((d) => d.day)
     );
 
     const perDay = await db.manyOrNone<{ day: string; seconds: string; pages_read: string }>(
-      `SELECT day, SUM(seconds) AS seconds, SUM(pages_read) AS pages_read
+      `SELECT day::text AS day, SUM(seconds) AS seconds, SUM(pages_read) AS pages_read
        FROM reading_sessions
        WHERE user_id = $1 AND day >= CURRENT_DATE - INTERVAL '29 days'
        GROUP BY day ORDER BY day ASC`,
@@ -140,7 +144,7 @@ router.get('/summary', async (req: AuthRequest, res) => {
       avg_pages_per_day: activeDays > 0 ? Math.round(totalPages / activeDays) : 0,
       pages_per_hour: pagesPerHour,
       per_day: perDay.map((d) => ({
-        day: String(d.day).slice(0, 10),
+        day: d.day,
         seconds: parseInt(d.seconds, 10),
         pages_read: parseInt(d.pages_read, 10),
       })),
