@@ -23,7 +23,11 @@ function normalize(input: string): string {
   return input.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-function isSeriesFresh(series: Series): boolean {
+/**
+ * True when a series' cached catalog is still within its TTL and a provider
+ * refresh can be safely skipped. Exported for testing.
+ */
+export function isSeriesFresh(series: Series): boolean {
   const ttlDays = series.ttl_days || config.seriesCacheTtlDays;
   if (!series.last_fetched_at) return false;
   const last = new Date(series.last_fetched_at).getTime();
@@ -413,8 +417,19 @@ async function createSeriesFromProvider(result: ProviderSeriesResult): Promise<S
   );
 }
 
-async function refreshSeriesFromProviders(book: Book, seriesRecord: Series): Promise<void> {
+async function refreshSeriesFromProviders(book: Book, seriesRecord: Series, force = false): Promise<void> {
   if (config.seriesProvider === 'internal') {
+    return;
+  }
+  // Skip the external lookup when the cache is still fresh, unless the caller
+  // forces it (e.g. a user-triggered "refresh now"). The stale-batch path
+  // (refreshStaleSeries) already pre-filters in SQL, so this is a defensive
+  // double-check there and the real guard for any other automatic caller.
+  if (!force && isSeriesFresh(seriesRecord)) {
+    logger.info(`${SERIES_LOG}:refresh_fresh`, {
+      series_id: seriesRecord.id,
+      series_key: seriesRecord.series_key,
+    });
     return;
   }
   const providerResult = await fetchProviderSeries(book);
@@ -651,6 +666,7 @@ export async function refreshSeriesCatalog(bookId: string, source: 'internal' | 
     return refreshSeriesFromLibrary(bookId);
   }
 
-  await refreshSeriesFromProviders(book, seriesRecord);
+  // User-triggered refresh: force past the freshness cache.
+  await refreshSeriesFromProviders(book, seriesRecord, true);
   return { series_id: seriesRecord.id };
 }
