@@ -54,6 +54,19 @@ export default function Admin() {
     queryClient.invalidateQueries({ queryKey: ['books'] });
   };
 
+  const [reindexMessage, setReindexMessage] = useState('');
+  const reindexMutation = useMutation({
+    mutationFn: () => admin.reindexFulltext(false),
+    onSuccess: (res) => {
+      setReindexMessage(`Indexed ${res.data.indexed} book(s) for in-book search.`);
+      setTimeout(() => setReindexMessage(''), 6000);
+    },
+    onError: (error: any) => {
+      setReindexMessage(error.response?.data?.error || 'Reindex failed');
+      setTimeout(() => setReindexMessage(''), 6000);
+    },
+  });
+
   const handleScan = async () => {
     setScanLoading(true);
     try {
@@ -178,6 +191,39 @@ export default function Admin() {
                 : 'bg-red-600/10 border border-red-600/30 text-red-800'
             }`}>
               {scanMessage}
+            </div>
+          )}
+        </div>
+
+        {/* Full-text Search Index */}
+        <div className="bg-parchment-100/70 rounded-xl border border-parchment-300 p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-xl font-serif font-semibold text-ink-900 mb-2">In-book Search Index</h2>
+              <p className="text-ink-500">
+                Build the full-text index so library search also matches words inside
+                your EPUB and PDF books. New books are indexed automatically on scan;
+                use this to backfill existing ones.
+              </p>
+            </div>
+            <button
+              onClick={() => reindexMutation.mutate()}
+              disabled={reindexMutation.isPending}
+              className="flex items-center space-x-2 px-6 py-3 bg-parchment-200 hover:bg-parchment-300 disabled:opacity-50 disabled:cursor-not-allowed text-ink-800 font-semibold rounded-lg transition border border-parchment-300"
+            >
+              {reindexMutation.isPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-ink-500" />
+                  <span>Indexing...</span>
+                </>
+              ) : (
+                <span>Reindex full text</span>
+              )}
+            </button>
+          </div>
+          {reindexMessage && (
+            <div className="mt-4 p-4 rounded-lg bg-parchment-50 border border-parchment-300 text-sm text-ink-700">
+              {reindexMessage}
             </div>
           )}
         </div>

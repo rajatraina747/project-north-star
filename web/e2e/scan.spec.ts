@@ -16,3 +16,12 @@ test('triggering a library scan posts to the scan endpoint', async ({ page }) =>
   // page surfaces the success notice.
   await expect(page.getByText('Scan started successfully!')).toBeVisible();
 });
+
+test('reindexing the full-text search index reports how many books were indexed', async ({ page }) => {
+  await seedAuth(page);
+  await mockApi(page);
+  await page.goto('/admin');
+
+  await page.getByRole('button', { name: 'Reindex full text' }).click();
+  await expect(page.getByText(/Indexed 3 book\(s\) for in-book search\./)).toBeVisible();
+});

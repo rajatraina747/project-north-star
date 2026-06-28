@@ -83,6 +83,9 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
   // Scan trigger + history + SSE progress stream (one-shot "done" frame).
   await page.route('**/api/admin/scans**', (r) => json(r, []));
   await page.route('**/api/admin/scan', (r) => json(r, { scan_id: 'scan-1' }));
+  await page.route('**/api/admin/reindex-fulltext', (r) =>
+    json(r, { message: 'Full-text reindex complete', indexed: 3, skipped: 0, total: 3 })
+  );
   await page.route('**/api/admin/scans/scan-1/stream', (r) =>
     r.fulfill({
       status: 200,

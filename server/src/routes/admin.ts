@@ -3,8 +3,9 @@ import db from '../db';
 import { logger } from '../utils/logger';
 import { config } from '../utils/config';
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth';
-import { Setting, ScanHistory } from '../types';
+import { Setting, ScanHistory, BookFormat } from '../types';
 import { refreshSeriesCatalog } from '../services/series';
+import { indexBookFullText } from '../services/fulltext';
 
 const router = Router();
 
@@ -332,6 +333,45 @@ router.post('/series/refresh', async (req: AuthRequest, res) => {
   } catch (error) {
     logger.error('Series refresh error:', error);
     res.status(500).json({ error: 'Failed to refresh series' });
+  }
+});
+
+// Build (or rebuild with ?force) the in-book full-text index. Backfills books
+// that predate the feature; new books are indexed automatically during scans.
+router.post('/reindex-fulltext', async (req: AuthRequest, res) => {
+  try {
+    const force = req.body?.force === true || req.query.force === 'true';
+
+    // One file per book, preferring EPUB over PDF (better text layer).
+    const rows = await db.manyOrNone<{ book_id: string; file_path: string; format: BookFormat }>(
+      `SELECT DISTINCT ON (bf.book_id) bf.book_id, bf.file_path, bf.format
+       FROM book_files bf
+       WHERE bf.format IN ('EPUB', 'PDF')
+       ${force ? '' : 'AND NOT EXISTS (SELECT 1 FROM book_fulltext ft WHERE ft.book_id = bf.book_id)'}
+       ORDER BY bf.book_id, CASE bf.format WHEN 'EPUB' THEN 0 ELSE 1 END`
+    );
+
+    let indexed = 0;
+    let skipped = 0;
+    for (const row of rows || []) {
+      try {
+        const ok = await indexBookFullText(
+          row.book_id,
+          `${config.booksPath}/${row.file_path}`,
+          row.format
+        );
+        if (ok) indexed += 1;
+        else skipped += 1;
+      } catch (error) {
+        logger.error(`Full-text reindex failed for book ${row.book_id}:`, error);
+        skipped += 1;
+      }
+    }
+
+    res.json({ message: 'Full-text reindex complete', indexed, skipped, total: rows?.length ?? 0 });
+  } catch (error) {
+    logger.error('Full-text reindex error:', error);
+    res.status(500).json({ error: 'Failed to reindex full text' });
   }
 });
 

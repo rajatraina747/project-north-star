@@ -8,6 +8,7 @@ import { MetadataExtractor } from './services/metadata-extractor';
 import { MetadataEnricher } from './services/metadata-enricher';
 import { CoverGenerator } from './services/cover-generator';
 import { refreshStaleSeries } from './services/series';
+import { indexBookFullText } from './services/fulltext';
 import { ScanHistory, BookFormat, ExtractedMetadata } from './types';
 
 class WorkerService {
@@ -208,6 +209,14 @@ class WorkerService {
          VALUES ($1, 'EMBEDDED', 0.5, $2)`,
         [bookId, JSON.stringify(extractedMetadata)]
       );
+
+      // Index the in-book full text for search (best-effort: a failure here must
+      // not block metadata/cover processing).
+      try {
+        await indexBookFullText(bookId, fullPath, format);
+      } catch (error) {
+        logger.error(`Full-text indexing failed for book ${bookId}:`, error);
+      }
 
       // Enrich with external APIs
       const enrichedMetadata = await this.metadataEnricher.enrich(extractedMetadata);

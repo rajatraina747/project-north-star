@@ -190,8 +190,9 @@ The web UI is on port `8080` by default. **Put a TLS-terminating reverse proxy (
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/search` | Full-text search with filters |
+| `POST` | `/api/search` | Full-text search with filters (incl. in-book text) |
 | `GET` | `/api/search/quick` | Title autocomplete |
+| `POST` | `/api/admin/reindex-fulltext` | Build/rebuild the in-book search index *(admin)* |
 | `GET` | `/api/library/stats` | Library statistics |
 | `GET` | `/api/library/authors` | All authors |
 | `GET` | `/api/library/authors/:id` | Author + their books |

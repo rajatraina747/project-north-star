@@ -31,7 +31,8 @@ router.post('/', async (req: AuthRequest, res) => {
     const params: (string | number | string[])[] = [];
     let paramIndex = 1;
 
-    // Full-text search on title, author, description
+    // Full-text search on title, author, description, and the extracted in-book
+    // text (book_fulltext, populated by the full-text indexer).
     if (query && query.trim()) {
       whereConditions.push(`(
         to_tsvector('english', b.title) @@ plainto_tsquery('english', $${paramIndex})
@@ -41,6 +42,11 @@ router.post('/', async (req: AuthRequest, res) => {
           INNER JOIN book_authors ba ON a.id = ba.author_id
           WHERE ba.book_id = b.id
           AND to_tsvector('english', a.name) @@ plainto_tsquery('english', $${paramIndex})
+        )
+        OR EXISTS (
+          SELECT 1 FROM book_fulltext ft
+          WHERE ft.book_id = b.id
+          AND ft.tsv @@ plainto_tsquery('english', $${paramIndex})
         )
       )`);
       params.push(query.trim());

@@ -251,6 +251,12 @@ export interface ScanStreamHandlers {
 
 export const admin = {
   scan: (force = false) => api.post('/admin/scan', { force }),
+  // Build (force=true rebuilds) the in-book full-text search index.
+  reindexFulltext: (force = false) =>
+    api.post<{ message: string; indexed: number; skipped: number; total: number }>(
+      '/admin/reindex-fulltext',
+      { force }
+    ),
   getScans: (limit = 20) => api.get<ScanHistory[]>('/admin/scans', { params: { limit } }),
   getScan: (id: string) => api.get<ScanHistory>(`/admin/scans/${id}`),
   duplicates: () => api.get<DuplicateReport>('/admin/duplicates'),

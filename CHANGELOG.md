@@ -29,6 +29,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   consumes it. No paid email provider is required — the link is logged via a
   pluggable delivery seam and can optionally be returned in the API response for
   headless setups. New reset UI on the login screen.
+- In-book full-text search: the extracted text of EPUB/PDF books is indexed in a
+  new `book_fulltext` table (Postgres full-text search, generated `tsvector` +
+  GIN index — no external search service) and folded into the existing search
+  route, so library search now matches words inside books. New books are indexed
+  on scan; `POST /api/admin/reindex-fulltext` (and an Admin button) backfills
+  existing libraries.
 - Reading insights: longest streak and reading pace (pages/hour) on the Stats
   page.
 - Comic (CBZ) reader: double-page spreads, continuous (webtoon) scrolling,

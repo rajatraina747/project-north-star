@@ -42,6 +42,11 @@ export const config = {
   seriesProvider: process.env.SERIES_PROVIDER || 'google',
   seriesCacheTtlDays: parseInt(process.env.SERIES_CACHE_TTL_DAYS || '30', 10),
 
+  // In-book full-text search: cap the extracted text stored per book. Keeps the
+  // generated tsvector under Postgres's ~1 MB limit and bounds storage; the
+  // start of a book is the most useful for search anyway.
+  fulltextMaxChars: parseInt(process.env.FULLTEXT_MAX_CHARS || '600000', 10),
+
   // Security
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 min
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
