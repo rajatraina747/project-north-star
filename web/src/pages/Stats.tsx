@@ -40,11 +40,13 @@ export default function Stats() {
 
       <div className="max-w-7xl mx-auto px-8 py-8 space-y-8">
         {/* Summary cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
           <StatCard label="Total time read" value={formatDuration(s?.total_seconds || 0)} />
           <StatCard label="Current streak" value={`${s?.current_streak || 0} day${s?.current_streak === 1 ? '' : 's'}`} />
+          <StatCard label="Longest streak" value={`${s?.longest_streak || 0} day${s?.longest_streak === 1 ? '' : 's'}`} />
           <StatCard label="Books finished" value={String(s?.books_finished || 0)} />
           <StatCard label="Avg pages/day" value={String(s?.avg_pages_per_day || 0)} />
+          <StatCard label="Pages/hour" value={String(s?.pages_per_hour || 0)} />
         </div>
 
         {/* Per-day chart (last 30 days) */}

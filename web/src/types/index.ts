@@ -140,8 +140,10 @@ export interface ReadingStats {
   total_pages: number;
   books_finished: number;
   current_streak: number;
+  longest_streak: number;
   active_days: number;
   avg_pages_per_day: number;
+  pages_per_hour: number;
   per_day: { day: string; seconds: number; pages_read: number }[];
   per_book: { book_id: string; title: string; thumbnail_path: string | null; seconds: number; pages_read: number }[];
 }

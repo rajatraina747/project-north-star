@@ -2,6 +2,7 @@ import { Router } from 'express';
 import db from '../db';
 import { logger } from '../utils/logger';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { computeStreaks } from '../utils/streaks';
 
 const router = Router();
 
@@ -92,18 +93,10 @@ router.get('/summary', async (req: AuthRequest, res) => {
       [userId]
     );
 
-    // Current streak: consecutive days up to today (or yesterday) with activity.
-    let streak = 0;
-    const daySet = new Set(days.map((d) => String(d.day).slice(0, 10)));
-    const cursor = new Date();
-    const toKey = (d: Date) => d.toISOString().slice(0, 10);
-    if (daySet.has(toKey(cursor)) || daySet.has(toKey(new Date(cursor.getTime() - 86400000)))) {
-      if (!daySet.has(toKey(cursor))) cursor.setDate(cursor.getDate() - 1);
-      while (daySet.has(toKey(cursor))) {
-        streak++;
-        cursor.setDate(cursor.getDate() - 1);
-      }
-    }
+    // Current + longest streaks from the set of active days.
+    const { current: streak, longest: longestStreak } = computeStreaks(
+      days.map((d) => String(d.day).slice(0, 10))
+    );
 
     const perDay = await db.manyOrNone<{ day: string; seconds: string; pages_read: string }>(
       `SELECT day, SUM(seconds) AS seconds, SUM(pages_read) AS pages_read
@@ -133,16 +126,19 @@ router.get('/summary', async (req: AuthRequest, res) => {
 
     const activeDays = days.length;
     const totalSeconds = parseInt(totals.total_seconds || '0', 10);
+    const totalPages = parseInt(totals.total_pages || '0', 10);
+    // Reading pace: pages per hour of active reading time.
+    const pagesPerHour = totalSeconds > 0 ? Math.round((totalPages / totalSeconds) * 3600) : 0;
 
     res.json({
       total_seconds: totalSeconds,
-      total_pages: parseInt(totals.total_pages || '0', 10),
+      total_pages: totalPages,
       books_finished: parseInt(finished.count, 10),
       current_streak: streak,
+      longest_streak: longestStreak,
       active_days: activeDays,
-      avg_pages_per_day: activeDays > 0
-        ? Math.round(parseInt(totals.total_pages || '0', 10) / activeDays)
-        : 0,
+      avg_pages_per_day: activeDays > 0 ? Math.round(totalPages / activeDays) : 0,
+      pages_per_hour: pagesPerHour,
       per_day: perDay.map((d) => ({
         day: String(d.day).slice(0, 10),
         seconds: parseInt(d.seconds, 10),
