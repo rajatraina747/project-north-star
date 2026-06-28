@@ -235,10 +235,17 @@ See [`.env.example`](.env.example) for the full list.
 
 PRs welcome. The project is actively developed — check open issues before starting something large.
 
-Run the test suite before submitting:
+Run the test suites before submitting:
 
 ```bash
+# Backend unit/integration tests
 cd server && npm test
+
+# Frontend unit/component tests (Vitest + React Testing Library)
+cd web && npm test
+
+# Frontend end-to-end tests (Playwright; stubs the API, no DB required)
+cd web && npx playwright install --with-deps chromium && npm run e2e
 ```
 
 ---

@@ -32,6 +32,11 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# Playwright e2e artifacts
+playwright-report/
+test-results/
+.playwright/
+
 # Local data (for development)
 books/
 data/
