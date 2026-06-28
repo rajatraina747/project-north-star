@@ -6,8 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 // Bundle the worker locally (self-hosted) rather than loading it from a CDN, so
 // the reader works offline / on isolated networks and complies with the CSP.
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
-import { progress as progressApi, bookmarks as bookmarksApi } from '../lib/api';
-import { getToken } from '../lib/auth';
+import { progress as progressApi, bookmarks as bookmarksApi, books as booksApi } from '../lib/api';
 import {
   getLocalProgress,
   pickLatestProgress,
@@ -93,7 +92,7 @@ function highlightTextLayer(div: HTMLDivElement | null, query: string) {
   });
 }
 
-export default function PdfReader({ bookId, fileId, fileUrl, title }: PdfReaderProps) {
+export default function PdfReader({ bookId, fileId, title }: PdfReaderProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -164,12 +163,17 @@ export default function PdfReader({ bookId, fileId, fileUrl, title }: PdfReaderP
   useEffect(() => {
     const loadPdf = async () => {
       try {
-        const token = getToken();
-        const response = await fetch(fileUrl, { headers: { Authorization: `Bearer ${token}` } });
-        if (!response.ok) throw new Error(`Failed to load PDF: ${response.statusText}`);
-
-        const arrayBuffer = await (await response.blob()).arrayBuffer();
-        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+        // Stream the PDF via a ticketed URL: pdf.js issues byte-range requests
+        // against it (the API supports ranges), so large/scanned PDFs no longer
+        // get buffered into memory before the first page renders.
+        const streamUrl = await booksApi.getStreamUrl(bookId, fileId);
+        const loadingTask = pdfjsLib.getDocument({
+          url: streamUrl,
+          rangeChunkSize: 256 * 1024,
+          // Fetch ranges on demand rather than eagerly pulling the whole file.
+          disableAutoFetch: true,
+          disableStream: false,
+        });
         const pdfDoc = await loadingTask.promise;
         setPdf(pdfDoc);
         pdfRef.current = pdfDoc;
@@ -209,7 +213,7 @@ export default function PdfReader({ bookId, fileId, fileUrl, title }: PdfReaderP
     };
 
     loadPdf();
-  }, [bookId, fileId, fileUrl]);
+  }, [bookId, fileId]);
 
   // Paged-mode render: render currentPage into the single canvas + text layer.
   useEffect(() => {

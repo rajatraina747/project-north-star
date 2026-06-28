@@ -6,6 +6,7 @@ import db from '../db';
 import { logger } from '../utils/logger';
 import { config } from '../utils/config';
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth';
+import { signFileTicket, verifyFileTicket } from '../utils/file-ticket';
 import { Book, BookWithDetails, Author, Series, Tag, BookFile, UpdateBookRequest } from '../types';
 import { buildSeriesContext } from '../services/series';
 import { MetadataEnricher } from '../services/metadata-enricher';
@@ -30,8 +31,12 @@ export function resolveWithin(baseDir: string, relativePath: string): string | n
  * Attach authors and files to a list of books using two batched queries (no
  * N+1). Lets list views show the author and a format badge.
  */
-export async function attachListDetails(books: Book[]): Promise<any[]> {
-  if (!books || books.length === 0) return books;
+type AuthorBrief = { id: string; name: string; sort_name: string | null };
+type FileBrief = { book_id: string; id: string; format: string; file_path: string; file_size: string };
+export type BookListItem = Book & { authors: AuthorBrief[]; files: FileBrief[] };
+
+export async function attachListDetails(books: Book[]): Promise<BookListItem[]> {
+  if (!books || books.length === 0) return [];
   const ids = books.map((b) => b.id);
 
   const authors = await db.manyOrNone<{ book_id: string; id: string; name: string; sort_name: string | null }>(
@@ -49,13 +54,13 @@ export async function attachListDetails(books: Book[]): Promise<any[]> {
     [ids]
   );
 
-  const authorsByBook = new Map<string, any[]>();
+  const authorsByBook = new Map<string, AuthorBrief[]>();
   for (const a of authors) {
     const list = authorsByBook.get(a.book_id) ?? [];
     list.push({ id: a.id, name: a.name, sort_name: a.sort_name });
     authorsByBook.set(a.book_id, list);
   }
-  const filesByBook = new Map<string, any[]>();
+  const filesByBook = new Map<string, FileBrief[]>();
   for (const f of files) {
     const list = filesByBook.get(f.book_id) ?? [];
     list.push(f);
@@ -111,22 +116,107 @@ function sanitizeBaseName(name: string): string {
   return cleaned.slice(0, 180) || 'upload';
 }
 
-// All routes require authentication
+/**
+ * Auth for the file-serving route. Accepts EITHER a normal Bearer token (used by
+ * the download flow, which can set headers) OR a short-lived `?token=` ticket
+ * scoped to this exact book+file (used by streaming readers, whose internal
+ * range requests can't set headers). Registered before the global auth so the
+ * ticket path isn't rejected by the header-only middleware.
+ */
+async function authenticateFileAccess(req: AuthRequest, res: express.Response, next: express.NextFunction): Promise<void> {
+  const { id, fileId } = req.params;
+  const ticket = typeof req.query.token === 'string' ? req.query.token : null;
+  if (ticket && verifyFileTicket(ticket, id, fileId)) {
+    next();
+    return;
+  }
+  await authenticateToken(req, res, next);
+}
+
+// Serve a book file for reading/downloading, with HTTP range support so readers
+// can stream large files instead of buffering them whole. Defined before the
+// global auth middleware so it can accept signed file tickets (see above).
+router.get('/:id/file/:fileId', authenticateFileAccess, async (req: AuthRequest, res) => {
+  try {
+    const { id, fileId } = req.params;
+
+    const file = await db.oneOrNone<BookFile>(
+      'SELECT * FROM book_files WHERE id = $1 AND book_id = $2',
+      [fileId, id]
+    );
+
+    if (!file) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    const fullPath = resolveWithin(config.booksPath, file.file_path);
+    if (!fullPath) {
+      res.status(400).json({ error: 'Invalid file path' });
+      return;
+    }
+
+    try {
+      await fs.access(fullPath);
+      const mimeType = FORMAT_MIME_TYPES[file.format] || 'application/octet-stream';
+
+      // Headers for epub.js / PDF.js byte-range support.
+      // CORS is handled by the global cors() middleware — no manual header here.
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+      // Auth-gated content, but book files don't change in place — let the
+      // browser/reader cache and revalidate via the ETag sendFile still sets.
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+
+      res.sendFile(fullPath, { cacheControl: false });
+    } catch {
+      res.status(404).json({ error: 'Book file not found on disk' });
+    }
+  } catch (error) {
+    logger.error('Get file error:', error);
+    res.status(500).json({ error: 'Failed to get file' });
+  }
+});
+
+// All remaining routes require authentication
 router.use(authenticateToken);
+
+// Issue a short-lived streaming ticket for a file. The reader embeds it in the
+// file URL so pdf.js/epub.js can fetch byte ranges without an auth header.
+router.get('/:id/file/:fileId/ticket', async (req: AuthRequest, res) => {
+  try {
+    const { id, fileId } = req.params;
+    const exists = await db.oneOrNone<{ id: string }>(
+      'SELECT id FROM book_files WHERE id = $1 AND book_id = $2',
+      [fileId, id]
+    );
+    if (!exists) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+    const token = signFileTicket(req.user!.id, id, fileId);
+    res.json({ token });
+  } catch (error) {
+    logger.error('Issue file ticket error:', error);
+    res.status(500).json({ error: 'Failed to issue file ticket' });
+  }
+});
 
 // Upload a book file into the library (admin only — modifies the shared library).
 // Writes the file under a sanitized path inside the read-write books volume,
 // then creates a scan record so the worker imports + enriches it asynchronously
 // (the request does NOT block on a full scan).
 router.post('/upload', requireAdmin, (req: AuthRequest, res) => {
-  uploadHandler.single('file')(req, res, async (err: any) => {
+  uploadHandler.single('file')(req, res, async (err: unknown) => {
     if (err) {
-      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-      res.status(status).json({ error: err.message || 'Upload failed' });
+      const e = err as { code?: string; message?: string };
+      const status = e.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      res.status(status).json({ error: e.message || 'Upload failed' });
       return;
     }
     try {
-      const file = (req as any).file as { originalname: string; buffer: Buffer; size: number } | undefined;
+      const file = (req as AuthRequest & { file?: { originalname: string; buffer: Buffer; size: number } }).file;
       if (!file) {
         res.status(400).json({ error: 'No file provided (field name must be "file")' });
         return;
@@ -263,7 +353,7 @@ router.get('/continue', async (req: AuthRequest, res) => {
     );
 
     // Transform to include progress data with each book
-    const booksWithProgress = results.map((row: any) => ({
+    const booksWithProgress = results.map((row: Record<string, unknown>) => ({
       book: {
         id: row.id,
         title: row.title,
@@ -289,7 +379,7 @@ router.get('/continue', async (req: AuthRequest, res) => {
         user_id: req.user!.id,
         book_id: row.id,
         book_file_id: row.book_file_id,
-        progress_percent: parseFloat(row.progress_percent) || 0,
+        progress_percent: Number(row.progress_percent) || 0,
         epub_cfi: row.epub_cfi,
         pdf_page: row.pdf_page,
         pdf_scroll_position: row.pdf_scroll_position,
@@ -401,7 +491,7 @@ router.patch('/:id', requireAdmin, async (req: AuthRequest, res) => {
     ];
 
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: (string | number | boolean | null)[] = [];
     let paramIndex = 1;
 
     for (const key of allowedFields) {
@@ -464,54 +554,15 @@ router.get('/:id/cover', async (req: AuthRequest, res) => {
 
     try {
       await fs.access(fullPath);
-      res.sendFile(fullPath);
+      // Covers rarely change; cache for a day and revalidate via ETag.
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.sendFile(fullPath, { cacheControl: false });
     } catch {
       res.status(404).json({ error: 'Cover file not found' });
     }
   } catch (error) {
     logger.error('Get cover error:', error);
     res.status(500).json({ error: 'Failed to get cover' });
-  }
-});
-
-// Serve book file for reading
-router.get('/:id/file/:fileId', async (req: AuthRequest, res) => {
-  try {
-    const { id, fileId } = req.params;
-
-    const file = await db.oneOrNone<BookFile>(
-      'SELECT * FROM book_files WHERE id = $1 AND book_id = $2',
-      [fileId, id]
-    );
-
-    if (!file) {
-      res.status(404).json({ error: 'File not found' });
-      return;
-    }
-
-    const fullPath = resolveWithin(config.booksPath, file.file_path);
-    if (!fullPath) {
-      res.status(400).json({ error: 'Invalid file path' });
-      return;
-    }
-
-    try {
-      await fs.access(fullPath);
-      const mimeType = FORMAT_MIME_TYPES[file.format] || 'application/octet-stream';
-
-      // Headers for epub.js / PDF.js byte-range support.
-      // CORS is handled by the global cors() middleware — no manual header here.
-      res.setHeader('Content-Type', mimeType);
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
-
-      res.sendFile(fullPath);
-    } catch {
-      res.status(404).json({ error: 'Book file not found on disk' });
-    }
-  } catch (error) {
-    logger.error('Get file error:', error);
-    res.status(500).json({ error: 'Failed to get file' });
   }
 });
 
@@ -547,7 +598,7 @@ router.post('/:id/refresh-metadata', requireAdmin, async (req: AuthRequest, res)
       publisher: book.publisher || undefined,
     });
 
-    const updates: Record<string, any> = {};
+    const updates: Record<string, unknown> = {};
     if (enriched.title && enriched.title !== book.title) {
       updates.title = enriched.title;
       updates.sort_title = enriched.title;

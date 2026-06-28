@@ -81,6 +81,14 @@ export const books = {
   getCover: (id: string, thumbnail = false) =>
     `/api/books/${id}/cover?thumbnail=${thumbnail}`,
   getFile: (bookId: string, fileId: string) => `/api/books/${bookId}/file/${fileId}`,
+  // Obtain a short-lived streaming URL for a file. The returned URL carries a
+  // signed ticket in the query string so reader libraries (pdf.js/epub.js) can
+  // issue byte-range requests directly, without an Authorization header — which
+  // is what enables true streaming instead of buffering the whole file.
+  getStreamUrl: async (bookId: string, fileId: string): Promise<string> => {
+    const { data } = await api.get<{ token: string }>(`/books/${bookId}/file/${fileId}/ticket`);
+    return `/api/books/${bookId}/file/${fileId}?token=${encodeURIComponent(data.token)}`;
+  },
   update: (id: string, data: Partial<Book>) => api.patch(`/books/${id}`, data),
   // The file endpoint requires the JWT in an Authorization header, which a
   // plain <a download> can't send. Fetch the file as a blob and save it.
